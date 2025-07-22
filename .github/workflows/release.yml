@@ -1,0 +1,58 @@
+name: release
+
+on:
+  #   push:
+  #     tags: ["v*"]
+  #     branches: ["master"]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Tag name for the release (e.g. v1.2.3)"
+        required: true
+        type: string
+
+env:
+  CUC_BIN_NAME: cuc
+
+jobs:
+  build:
+    name: Build Windows binaries
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-pc-windows-msvc
+          - i686-pc-windows-msvc
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain (${{ matrix.target }})
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+
+      - name: Build binary (${{ matrix.target }})
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Prepare artifact
+        run: |
+          mkdir dist
+          if ("${{ matrix.target }}" -eq "x86_64-pc-windows-msvc") {
+            $out = "${{ env.CUC_BIN_NAME }}-${{ inputs.tag_name }}-x64.exe"
+          } else {
+            $out = "${{ env.CUC_BIN_NAME }}-${{ inputs.tag_name }}-x86.exe"
+          }
+          copy "target/${{ matrix.target }}/release/${{ env.CUC_BIN_NAME }}.exe" "dist/${out}"
+
+      - name: Upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag_name }}
+          files: dist/*.exe
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
