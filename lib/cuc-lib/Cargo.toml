@@ -1,0 +1,16 @@
+[package]
+name = "cuc-lib"
+version = "0.1.0"
+edition = "2024"
+description = "Library for working with usage spec and cuc-cli."
+authors = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+readme = { workspace = true }
+
+[lib]
+name = "cuc"
+
+[dependencies]
+kdl = { version = "6.3.4" }
