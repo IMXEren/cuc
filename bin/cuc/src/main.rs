@@ -13,7 +13,7 @@ fn main() {
     if let Some(subcmd) = cli.command {
         match subcmd.run() {
             Err(e) => {
-                eprintln!("[ERROR] {}", e);
+                eprintln!("[ERROR] {:?}", e);
                 exit(1)
             }
             _ => {}
