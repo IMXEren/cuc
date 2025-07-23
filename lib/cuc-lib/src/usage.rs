@@ -275,6 +275,12 @@ pub fn parse_flag(node: &KdlNode) -> Result<Flag, UError> {
                 "help" => flag.help = entry.value().as_string().unwrap_or_default().to_string(),
                 "hide" => flag.hide = entry.value().as_bool().unwrap_or_default(),
                 "global" => flag.global = entry.value().as_bool().unwrap_or_default().into(),
+                "negate" => {
+                    let negate_flag = entry.value().as_string().unwrap_or_default().to_string();
+                    if !negate_flag.is_empty() {
+                        flag.names.push(negate_flag);
+                    }
+                }
                 _ => {}
             }
         }
