@@ -1,6 +1,6 @@
 [package]
 name = "cuc-cli"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "A CLI tool to generate clink argmatcher completions from the usage spec."
 authors = { workspace = true }
