@@ -140,7 +140,6 @@ impl Generate {
             ShimType::Scoop => {
                 let shim_name = format!("{}.shim", bin_stem.to_str().unwrap());
                 let shim_path = bin_dir.join(shim_name);
-                eprintln!("{}", shim_path.display());
                 let mut shim_file = File::open(&shim_path).context(format!(
                     "failed to open scoop shim: {}",
                     shim_path.to_string_lossy()
