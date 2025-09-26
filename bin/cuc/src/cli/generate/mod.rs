@@ -1,6 +1,8 @@
+use anyhow::Context;
 use clap::{Args, ValueHint};
+use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::{fs::OpenOptions, path::PathBuf};
+use std::path::{Path, PathBuf};
 
 use crate::{cli::generate::generator::Completor, spec::UsageSpecExt};
 
@@ -77,18 +79,82 @@ impl Generate {
             return Ok(which::which(path)?.canonicalize()?);
         }
 
-        let git_bin = which::which("git.exe")?;
-        if let Some(git_bin_dir) = git_bin.parent() {
-            match git_bin_dir.file_name().map(|ostr| ostr.to_str().unwrap()) {
-                Some("cmd") => {
-                    return Ok(which::which(git_bin_dir.join("..\\bin\\bash.exe"))?.canonicalize()?);
+        let failure_message = "failed to find bash shell! Try again with inputting the shell flag";
+        let git_bins = which::which_all_global("git.exe")
+            .map_err(|e| {
+                eprintln!("[ERROR] failed to find git.exe!");
+                e
+            })
+            .context(failure_message)?;
+
+        for git_bin in git_bins {
+            if let Some(git_bin_dir) = git_bin.parent() {
+                let mut git_bin_dir = git_bin_dir.to_path_buf();
+                if let Some(shim_type) = self.is_shim_path(&git_bin_dir) {
+                    match self.resolve_shims(shim_type, &git_bin_dir, git_bin.file_stem().unwrap())
+                    {
+                        Ok(git_bin_shim) => {
+                            git_bin_dir = git_bin_shim.parent().unwrap().to_path_buf();
+                        }
+                        Err(e) => {
+                            eprintln!("[ERROR] {e}");
+                            continue;
+                        }
+                    }
                 }
-                Some("bin") => {
-                    return Ok(which::which(git_bin_dir.join("bash.exe"))?.canonicalize()?);
-                }
-                _ => {}
-            };
+
+                match git_bin_dir.file_name().map(|ostr| ostr.to_str().unwrap()) {
+                    Some("cmd") => {
+                        return Ok(path_clean::clean(which::which(
+                            git_bin_dir.join("..\\bin\\bash.exe"),
+                        )?));
+                    }
+                    Some("bin") => {
+                        return Ok(path_clean::clean(which::which(
+                            git_bin_dir.join("bash.exe"),
+                        )?));
+                    }
+                    _ => {}
+                };
+            }
         }
-        anyhow::bail!("failed to find bash shell! Try again with inputting the shell flag");
+        anyhow::bail!(failure_message);
     }
+
+    fn is_shim_path(&self, bin_dir: &Path) -> Option<ShimType> {
+        if bin_dir.ends_with(
+            PathBuf::from(std::env::var("SCOOP").unwrap_or("scoop".to_string())).join("shims"),
+        ) {
+            return Some(ShimType::Scoop);
+        }
+        None
+    }
+
+    fn resolve_shims(
+        &self,
+        shim_type: ShimType,
+        bin_dir: &Path,
+        bin_stem: &std::ffi::OsStr,
+    ) -> anyhow::Result<PathBuf> {
+        match shim_type {
+            ShimType::Scoop => {
+                let shim_name = format!("{}.shim", bin_stem.to_str().unwrap());
+                let shim_path = bin_dir.join(shim_name);
+                eprintln!("{}", shim_path.display());
+                let mut shim_file = File::open(&shim_path).context(format!(
+                    "failed to open scoop shim: {}",
+                    shim_path.to_string_lossy()
+                ))?;
+                let shim = scoop_shim::from_reader(&mut shim_file).context(format!(
+                    "failed to read scoop shim: {}",
+                    shim_path.to_string_lossy()
+                ))?;
+                return Ok(shim.path().to_path_buf());
+            }
+        }
+    }
+}
+
+enum ShimType {
+    Scoop,
 }
