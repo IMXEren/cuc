@@ -33,7 +33,8 @@ pub struct Complete {
 
 impl Complete {
     pub fn run(self) -> anyhow::Result<()> {
-        let mut words = winsplit::split(&self.line);
+        let decoded_line = mbase64::decode(&self.line)?;
+        let mut words = winsplit::split(&decoded_line);
         let run_template = mbase64::decode(&self.args[0])?;
         let run_script = self.render_run(&run_template, &mut words)?;
         self.complete(&run_script)?;

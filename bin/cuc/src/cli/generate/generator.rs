@@ -32,6 +32,7 @@ impl GeneratorView<'_> {
 
         let mut script_start = format!(
             r#"require("arghelper")
+local base64 = require("base64")
 
 function loop_until(word_index, line_state, user_data)
 	if not user_data.first_index then
@@ -620,7 +621,8 @@ end
     local b64_encoded_script = [[{}]]
     local exec = [[{}]]
     local shell = [[{}]]
-    local args = [[ complete --current ]] .. word_index - 1 .. [[ --line "]] .. line_state:getline() .. [[" --shell "]] .. shell .. [[" -- "]] .. b64_encoded_script .. [["]]
+    local encoded_line = base64.encode(line_state:getline(), nil, true)
+    local args = [[ complete --current ]] .. word_index - 1 .. [[ --line "]] .. encoded_line .. [[" --shell "]] .. shell .. [[" -- "]] .. b64_encoded_script .. [["]]
     local pipe = io.popen(exec .. args)
     assert(pipe, "[ERROR]: failed to run complete command")
     local complete_args = {{}}
