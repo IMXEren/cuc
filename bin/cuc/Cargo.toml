@@ -15,13 +15,13 @@ name = "cuc"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1.0.98"
+anyhow = "1.0.100"
 base64 = "0.22.1"
-clap = { version = "4.5.41", features = ["derive"] }
+clap = { version = "4.5.53", features = ["derive"] }
 cuc-lib = { workspace = true }
 clap_usage = "2.0.3"
 kdl = "6.3.4"
-tera = "1.20.0"
+tera = "1.20.1"
 which = "8.0.0"
 winsplit = "0.1.0"
 scoop-shim = "0.1.1"
