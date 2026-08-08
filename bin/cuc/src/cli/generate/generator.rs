@@ -55,6 +55,38 @@ end
 "#
         );
 
+        if let Some(completor) = self.completor {
+            script_start += &format!(
+                r#"function completor(word_index, line_state, b64_encoded_script, filter)
+	local exec = [[{}]]
+    local shell = [[{}]]
+    local encoded_line = base64.encode(line_state:getline(), nil, true)
+    local args = [[ complete --current ]] .. word_index - 1 .. [[ --line "]] .. encoded_line .. [[" --shell "]] .. shell .. [[" -- "]] .. b64_encoded_script .. [["]]
+    local pipe, pclose = io.popen(exec .. args .. " 2>NUL")
+    assert(pipe, "[ERROR]: failed to run complete command")
+	assert(type(pclose) == "function", "[ERROR]: failed to get pclose function from io.popen (io.popenyield)")
+    local complete_args = {{}}
+    for line in pipe:lines() do
+        if filter then
+            line = line:match("^([^:]+):") -- for filtering out descriptions
+            goto continue
+        end
+        table.insert(complete_args, line)
+        ::continue::
+    end
+	local ok, _, code = pclose()
+	if not ok then
+		print("[ERROR]: failed to run complete command, exit code: " .. code)
+	end
+    return complete_args
+end
+
+"#,
+                completor.exe_path.display(),
+                completor.shell.display(),
+            )
+        }
+
         let mut script_body = {
             if self.arg_matchers.is_empty() {
                 format!("\nclink.argmatcher(\"{}\")", self.spec.info.bin)
@@ -590,7 +622,6 @@ end
             self.completor.is_some(),
             "No completor! Can't generate arg completions without it"
         );
-        let completor = self.completor.unwrap();
         let mut function = String::new();
         let func_name = namespace::arg_complete_func_name(&complete.name);
 
@@ -603,12 +634,9 @@ end
         let complete_run = complete_run.unwrap();
         let encoded_script = mbase64::encode(complete_run);
 
-        let filter_descriptions_code = match complete.descs {
-            false => String::new(),
-            true => String::from(
-                r#"line = line:match("^([^:]+):") -- for filtering out descriptions
-        "#,
-            ),
+        let filter = match complete.descs {
+            false => String::from("false"),
+            true => String::from("true"),
         };
 
         function += "function ";
@@ -619,20 +647,9 @@ end
 {}
 --]]
     local b64_encoded_script = [[{}]]
-    local exec = [[{}]]
-    local shell = [[{}]]
-    local encoded_line = base64.encode(line_state:getline(), nil, true)
-    local args = [[ complete --current ]] .. word_index - 1 .. [[ --line "]] .. encoded_line .. [[" --shell "]] .. shell .. [[" -- "]] .. b64_encoded_script .. [["]]
-    local pipe = io.popen(exec .. args)
-    assert(pipe, "[ERROR]: failed to run complete command")
-    local complete_args = {{}}
-    for line in pipe:lines() do
-        {}table.insert(complete_args, line)
-    end
-    pipe:close()
-    return complete_args
+    return completor(word_index, line_state, b64_encoded_script, {})
 "#,
-            complete_run, encoded_script, completor.exe_path.display(), completor.shell.display(), filter_descriptions_code
+            complete_run, encoded_script, filter,
         )
         .as_str();
         function += "end\n";
