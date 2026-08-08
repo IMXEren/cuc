@@ -22,7 +22,7 @@ impl NameSpace {
         self.scope.is_empty()
     }
 
-    pub fn view(&self) -> NameSpaceView {
+    pub fn view(&self) -> NameSpaceView<'_> {
         NameSpaceView {
             scope: self.scope.as_slice(),
         }
@@ -39,7 +39,7 @@ impl NameSpace {
         self
     }
 
-    pub fn parent(&self) -> NameSpaceView {
+    pub fn parent(&self) -> NameSpaceView<'_> {
         if !self.scope.is_empty() {
             NameSpaceView {
                 scope: &self.scope[..self.scope.len() - 1],
@@ -73,7 +73,7 @@ impl NameSpaceView<'_> {
         self.scope.is_empty()
     }
 
-    pub fn parent(&self) -> NameSpaceView {
+    pub fn parent(&self) -> NameSpaceView<'_> {
         if !self.scope.is_empty() {
             NameSpaceView {
                 scope: &self.scope[..self.scope.len() - 1],
