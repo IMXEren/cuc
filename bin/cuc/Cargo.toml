@@ -22,7 +22,7 @@ cuc-lib = { workspace = true }
 clap_usage = "5.0.0"
 kdl = "6"
 tera = "2"
-which = "8.0.0"
+which = "8.0.5"
 winsplit = "0.1.0"
 scoop-shim = "0.1.1"
 path-clean = "1.0.1"
