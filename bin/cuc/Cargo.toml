@@ -15,7 +15,7 @@ name = "cuc"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1.0.100"
+anyhow = "1.0.104"
 base64 = "0.22.1"
 clap = { version = "4.5.53", features = ["derive"] }
 cuc-lib = { workspace = true }
