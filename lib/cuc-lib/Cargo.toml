@@ -13,4 +13,4 @@ readme = { workspace = true }
 name = "cuc"
 
 [dependencies]
-kdl = { version = "6.3.4" }
+kdl = { version = "6" }
