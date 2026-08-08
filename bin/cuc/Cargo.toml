@@ -16,7 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.104"
-base64 = "0.22.1"
+base64 = "0.23.1"
 clap = { version = "4.5.53", features = ["derive"] }
 cuc-lib = { workspace = true }
 clap_usage = "2.0.3"
