@@ -69,10 +69,8 @@ end
     for line in pipe:lines() do
         if filter then
             line = line:match("^([^:]+):") -- for filtering out descriptions
-            goto continue
         end
         table.insert(complete_args, line)
-        ::continue::
     end
 	local ok, _, code = pclose()
 	if not ok then
