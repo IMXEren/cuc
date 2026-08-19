@@ -63,8 +63,14 @@ end
     local encoded_line = base64.encode(line_state:getline(), nil, true)
     local args = [[ complete --current ]] .. word_index - 1 .. [[ --line "]] .. encoded_line .. [[" --shell "]] .. shell .. [[" -- "]] .. b64_encoded_script .. [["]]
     local pipe, pclose = io.popen(exec .. args .. " 2>NUL")
-    assert(pipe, "[ERROR]: failed to run complete command")
-	assert(type(pclose) == "function", "[ERROR]: failed to get pclose function from io.popen (io.popenyield)")
+    assert(pipe, "[ERROR]: failed to run complete command! err: " .. tostring(pclose) .. ", code: " .. tostring(errcode))
+	-- Clink may return a pclose function as the second value when io.popen()
+	-- is redirected to io.popenyield(). Otherwise, fall back to pipe:close().
+	if type(pclose) ~= "function" then
+		pclose = function()
+			return pipe:close()
+		end
+	end
     local complete_args = {{}}
     for line in pipe:lines() do
         if filter then
