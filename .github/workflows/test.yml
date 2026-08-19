@@ -3,7 +3,7 @@ name: test
 on:
   push:
     tags: ["v*"]
-    branches: ["master", "dev"]
+    branches: ["master"]
   pull_request:
     branches: ["master", "dev"]
   workflow_dispatch:
@@ -13,7 +13,7 @@ jobs:
   test:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable

@@ -62,7 +62,7 @@ end
     local shell = [[{}]]
     local encoded_line = base64.encode(line_state:getline(), nil, true)
     local args = [[ complete --current ]] .. word_index - 1 .. [[ --line "]] .. encoded_line .. [[" --shell "]] .. shell .. [[" -- "]] .. b64_encoded_script .. [["]]
-    local pipe, pclose = io.popen(exec .. args .. " 2>NUL")
+    local pipe, pclose, errcode = io.popen(exec .. args .. " 2>NUL")
     assert(pipe, "[ERROR]: failed to run complete command! err: " .. tostring(pclose) .. ", code: " .. tostring(errcode))
 	-- Clink may return a pclose function as the second value when io.popen()
 	-- is redirected to io.popenyield(). Otherwise, fall back to pipe:close().
