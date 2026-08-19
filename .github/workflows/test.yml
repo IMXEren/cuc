@@ -3,7 +3,7 @@ name: test
 on:
   push:
     tags: ["v*"]
-    branches: ["master", "dev"]
+    branches: ["master"]
   pull_request:
     branches: ["master", "dev"]
   workflow_dispatch:
