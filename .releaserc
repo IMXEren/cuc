@@ -1,0 +1,74 @@
+{
+  "branches": [
+    "master",
+    { "name": "dev", "prerelease": true }
+  ],
+  "plugins": [
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "releaseRules": [
+          { "type": "fix", "release": "patch" },
+          { "type": "feat", "release": "minor" },
+          { "type": "bump", "release": "patch" },
+          { "type": "perf", "release": "patch" },
+          { "type": "build", "scope": "Needs bump", "release": "patch" }
+        ]
+      }
+    ],
+    [
+      "@semantic-release/release-notes-generator",
+      {
+        "preset": "conventionalcommits",
+        "presetConfig": {
+          "types": [
+            { "type": "fix", "section": "🐛 Bug Fixes", "hidden": false },
+            { "type": "feat", "section": "✨ New Features", "hidden": false },
+            { "type": "bump", "section": "🚀 Updated App Support", "hidden": false },
+            { "type": "perf", "section": "🔧 Improvements", "hidden": false },
+            { "type": "build", "hidden": true }
+          ]
+        }
+      }
+    ],
+    [
+      "@semantic-release/changelog",
+      {
+        "changelogFile": "CHANGELOG.md"
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "bash .github/scripts/prepare-release.sh ${nextRelease.version}"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": [
+          "CHANGELOG.md",
+          "bin/cuc/Cargo.toml",
+          "Cargo.lock"
+        ],
+        "message": "chore: Release v${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          { "path": "dist/*.exe" }
+        ],
+        "successComment": false
+      }
+    ],
+    [
+      "@cleyrop-org/semantic-release-backmerge",
+      {
+        "backmergeBranches": [{ "from": "master", "to": "dev" }],
+        "clearWorkspace": true
+      }
+    ]
+  ]
+}
