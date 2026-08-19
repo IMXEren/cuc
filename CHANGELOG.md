@@ -1,3 +1,9 @@
+## [0.2.7](https://github.com/IMXEren/cuc/compare/v0.2.6...v0.2.7) (2026-08-19)
+
+### 🐛 Bug Fixes
+
+* **generator:** add missing errcode ([d245bfa](https://github.com/IMXEren/cuc/commit/d245bfaf9199a0351282b8628ba86ffa9f24cc7f))
+
 ## [0.2.7-dev.1](https://github.com/IMXEren/cuc/compare/v0.2.6...v0.2.7-dev.1) (2026-08-19)
 
 ### 🐛 Bug Fixes
