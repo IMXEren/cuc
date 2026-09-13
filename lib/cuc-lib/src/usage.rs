@@ -13,6 +13,13 @@ pub struct UsageSpec {
     pub args: Vec<Arg>,
     pub cmds: Vec<Cmd>,
     pub completes: HashMap<String, Complete>,
+    pub default_subcommand: Option<String>,
+    pub default_subcommand_flags: bool,
+    /// Root-level mounts, whose commands the generated completion discovers by
+    /// running them.
+    pub pending_mounts: Vec<PendingMount>,
+    /// Root-level sigil arguments.
+    pub sigils: Vec<Arg>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -65,6 +72,20 @@ pub struct Arg {
     pub min: Option<i128>,
     pub max: Option<i128>,
     pub default: Option<String>,
+    pub double_dash: DoubleDash,
+    /// A leading prefix that classifies this argument independently of its place in
+    /// the positional sequence, e.g. `+` for `+node`. The prefix is removed before the
+    /// value is stored or completed.
+    pub sigil: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum DoubleDash {
+    Automatic,
+    #[default]
+    Optional,
+    Required,
+    Preserve,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -76,6 +97,27 @@ pub struct Cmd {
     pub flags: Vec<Flag>,
     pub aliases: Vec<Alias>,
     pub cmds: Vec<Box<Cmd>>,
+    pub completes: HashMap<String, Complete>,
+    pub mounted: bool,
+    /// Mounts declared by this command. Their commands are discovered by running the
+    /// mount while completing, never while generating.
+    pub pending_mounts: Vec<PendingMount>,
+    /// Sigil arguments in effect here: this command's own plus every ancestor's, because
+    /// a subcommand inherits the sigils declared by its ancestors.
+    pub sigils: Vec<Arg>,
+    /// Token that restarts argument parsing, letting one command line hold several
+    /// invocations of this command.
+    pub restart_token: Option<String>,
+}
+
+/// A Usage `mount`: the mounted commands are discovered by running `run` while
+/// completing, as usage itself does when it resolves a mount.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct PendingMount {
+    /// Command executed while completing to print the mounted command names.
+    pub run: String,
+    /// Placeholder shown for the discovered commands, e.g. `[TASK] [ARGS]…`.
+    pub synopsis: Option<String>,
 }
 
 #[derive(Debug, Default, Clone)]

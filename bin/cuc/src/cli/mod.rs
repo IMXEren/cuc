@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 mod complete;
 mod generate;
 mod last_modified;
+mod subcommands;
 mod usage;
 
 #[derive(Debug, Parser)]
@@ -23,6 +24,8 @@ pub struct Cli {
 pub enum Commands {
     Generate(generate::Generate),
     Complete(complete::Complete),
+    #[command(hide = true)]
+    Subcommands(subcommands::Subcommands),
     Usage(usage::Usage),
     LastModified(last_modified::LastModified),
 }
@@ -32,6 +35,7 @@ impl Commands {
         let result = match self {
             Commands::Generate(cmd) => cmd.run()?,
             Commands::Complete(cmd) => cmd.run()?,
+            Commands::Subcommands(cmd) => cmd.run()?,
             Commands::Usage(cmd) => cmd.run()?,
             Commands::LastModified(cmd) => cmd.run()?,
         };

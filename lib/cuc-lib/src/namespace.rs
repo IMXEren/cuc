@@ -120,6 +120,15 @@ impl NameSpaceView<'_> {
         func_name
     }
 
+    /// Ancestor scopes ordered from the root namespace down to `self` (inclusive).
+    pub fn lineage(&self) -> Vec<NameSpaceView<'_>> {
+        (0..=self.scope.len())
+            .map(|len| NameSpaceView {
+                scope: &self.scope[..len],
+            })
+            .collect()
+    }
+
     pub fn cmd_func_name<S>(&self, name: S) -> String
     where
         S: AsRef<str>,
@@ -143,15 +152,20 @@ impl Display for NameSpaceView<'_> {
     }
 }
 
+/// Encode an arbitrary Usage name as a collision-free Lua identifier fragment.
+/// Underscores are encoded too, so punctuation escapes cannot collide with literal text.
 pub fn slugify<S>(input: S) -> String
 where
     S: AsRef<str>,
 {
-    input
-        .as_ref()
-        .chars()
-        .filter(|c| c.is_alphanumeric() || c == &'_')
-        .collect()
+    input.as_ref().chars().fold(String::new(), |mut out, c| {
+        if c.is_ascii_alphanumeric() {
+            out.push(c);
+        } else {
+            out.push_str(&format!("_u{:x}_", c as u32));
+        }
+        out
+    })
 }
 
 pub fn arg_complete_func_name<S>(complete_name: S) -> String
@@ -163,6 +177,15 @@ where
     func_name
 }
 
+pub fn sigil_arg_func_name<S>(arg_name: S) -> String
+where
+    S: AsRef<str>,
+{
+    let mut func_name = String::from("_sigil_arg_");
+    func_name += &slugify(arg_name.as_ref());
+    func_name
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,6 +194,14 @@ mod tests {
     fn test_constants() {
         assert_eq!(NameSpace::SEPARATOR, "::");
         assert_eq!(NameSpace::FUNC_SEPARATOR, "_");
+    }
+
+    #[test]
+    fn slugify_produces_valid_distinct_lua_identifier_fragments() {
+        assert_eq!(slugify("tool-alias"), "tool_u2d_alias");
+        assert_eq!(slugify("工具"), "_u5de5__u5177_");
+        assert_ne!(slugify("a-b"), slugify("ab"));
+        assert_ne!(slugify("a-b"), slugify("a_u2d_b"));
     }
 
     #[test]

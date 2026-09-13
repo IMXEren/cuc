@@ -1,215 +1,685 @@
-use kdl::KdlDocument;
 use std::{
-    borrow::BorrowMut,
     collections::HashMap,
     io::{IsTerminal, Read},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 use cuc::{
     namespace::NameSpace,
-    usage::{parse_bin, parse_include, parse_name, parse_usage},
+    usage::{
+        Alias, Arg, Cmd, Complete, CompleteKind, DoubleDash, Flag, GlobalFlag, Info, PendingMount,
+    },
 };
+use usage::{Spec, SpecArg, SpecClause, SpecCommand, SpecComplete, SpecFlag};
 
 pub trait UsageSpecExt
 where
     Self: Sized,
 {
     fn load(file: Option<&PathBuf>) -> anyhow::Result<Self>;
-    fn parse<S>(ctx: ParsingContext, source: S) -> anyhow::Result<Self>
-    where
-        S: AsRef<str>;
-    fn merge(self, other: Self) -> Self;
-    fn add_default_completes(completes: &mut HashMap<String, cuc::usage::Complete>);
-    fn add_global_flag_to_cmd(flag: &cuc::usage::Flag, cmd: &mut cuc::usage::Cmd, nm: NameSpace);
-    fn add_global_flags_to_all_subcmds<C>(cmds: &mut [C], nm: NameSpace)
-    where
-        C: BorrowMut<cuc::usage::Cmd>;
-}
-
-pub struct ParsingContext {
-    source: ParsingSource,
-}
-
-enum ParsingSource {
-    Stdin,
-    File(PathBuf),
+    fn add_default_completes(completes: &mut HashMap<String, Complete>);
 }
 
 impl UsageSpecExt for cuc::usage::UsageSpec {
     fn load(file: Option<&PathBuf>) -> anyhow::Result<Self> {
-        let (ctx, source) = if let Some(usage_kdl_path) = file {
-            let ctx = ParsingContext {
-                source: ParsingSource::File(usage_kdl_path.clone()),
-            };
-            (ctx, std::fs::read_to_string(usage_kdl_path)?)
+        let spec = if let Some(path) = file {
+            Spec::parse_file(path)?
         } else {
             let mut input = std::io::stdin();
-            if !input.is_terminal() {
-                let ctx = ParsingContext {
-                    source: ParsingSource::Stdin,
-                };
-                let mut buf = String::new();
-                input.read_to_string(&mut buf)?;
-                (ctx, buf)
-            } else {
-                anyhow::bail!("stdin is not atty! No input provided");
+            if input.is_terminal() {
+                anyhow::bail!("stdin is a TTY and no input was provided");
             }
+            let mut source = String::new();
+            input.read_to_string(&mut source)?;
+            source.parse::<Spec>()?
         };
 
-        Self::parse(ctx, source)
+        let mut pending = PendingMounts::default();
+        collect_pending_mounts(&spec.cmd, &NameSpace::root(), &mut pending);
+        Ok(convert_spec(spec, &pending))
     }
 
-    fn parse<S>(ctx: ParsingContext, source: S) -> anyhow::Result<Self>
-    where
-        S: AsRef<str>,
+    fn add_default_completes(completes: &mut HashMap<String, Complete>) {
+        completes.insert("file".into(), Complete::file_complete());
+        completes.insert("dir".into(), Complete::dir_complete());
+    }
+}
+
+/// A mount's commands, keyed by the namespace of the command that declares it.
+///
+/// They are kept out of the spec because a mount is not resolved while generating:
+/// usage runs the mount command, and so does the generated completion, at the moment
+/// it is asked for a completion.
+type PendingMounts = HashMap<String, Vec<PendingMount>>;
+
+/// Record every mount as dynamic. Usage resolves a mount by running its command, which
+/// is exactly what the generated completion does too: the mounted commands belong to the
+/// directory the user is in, not to the one that generated the file, so recording the
+/// output here would freeze a snapshot that is wrong everywhere but here.
+fn collect_pending_mounts(cmd: &SpecCommand, namespace: &NameSpace, pending: &mut PendingMounts) {
+    if !cmd.mounts.is_empty() {
+        pending
+            .entry(namespace.display())
+            .or_default()
+            .extend(cmd.mounts.iter().map(|mount| PendingMount {
+                run: mount.run.clone(),
+                synopsis: mount.synopsis.clone(),
+            }));
+    }
+
+    for subcommand in cmd.subcommands.values() {
+        collect_pending_mounts(
+            subcommand,
+            &namespace.clone().join(&subcommand.name),
+            pending,
+        );
+    }
+}
+
+fn convert_spec(spec: Spec, pending: &PendingMounts) -> cuc::usage::UsageSpec {
+    let root_namespace = NameSpace::root();
+    let mut flags = spec
+        .cmd
+        .flags
+        .iter()
+        .filter(|flag| !flag.hide)
+        .map(convert_flag)
+        .collect::<Vec<_>>();
+    if spec.default_subcommand_flags
+        && let Some(default) = spec
+            .default_subcommand
+            .as_ref()
+            .and_then(|name| spec.cmd.subcommands.get(name))
     {
-        let mut info = cuc::usage::Info::default();
-        let mut flags: Vec<cuc::usage::Flag> = vec![];
-        let mut args: Vec<cuc::usage::Arg> = vec![];
-        let mut cmds: Vec<cuc::usage::Cmd> = vec![];
-        let mut completes: HashMap<String, cuc::usage::Complete> = HashMap::new();
-        let mut chspec: Option<Self> = None;
-
-        let kdl_doc: KdlDocument = source.as_ref().parse()?;
-        for node in kdl_doc.nodes() {
-            match node.name().value() {
-                "name" => info.name = parse_name(node)?,
-                "bin" => info.bin = parse_bin(node)?,
-                "include" => {
-                    let include_path = parse_include(node)?;
-                    let include_path = Path::new(&include_path);
-                    let file = match include_path.is_relative() {
-                        true => {
-                            let parent = match ctx.source {
-                                ParsingSource::Stdin => std::env::current_dir()?,
-                                ParsingSource::File(ref path_buf) => {
-                                    path_buf.parent().unwrap().to_path_buf()
-                                }
-                            };
-                            let file = parent.join(include_path);
-                            file
-                        }
-                        false => include_path.to_path_buf(),
-                    };
-                    chspec = Some(Self::load(Some(&file))?);
-                }
-                _ => {}
-            }
-
-            let usage = parse_usage(node)?;
-            if let Some(usage) = usage {
-                match usage {
-                    cuc::usage::Usage::Flag(flag) if !flag.hide => flags.push(flag),
-                    cuc::usage::Usage::Arg(arg) if !arg.hide => args.push(arg),
-                    cuc::usage::Usage::Cmd(cmd) if !cmd.hide => cmds.push(cmd),
-                    cuc::usage::Usage::Complete(complete) => {
-                        completes.insert(complete.name.to_lowercase(), complete);
-                    }
-                    _ => (),
-                };
-            }
-        }
-
-        // Adding imposed global flags to its subsequent subcmd, recursively
+        for flag in default
+            .flags
+            .iter()
+            .filter(|flag| !flag.hide)
+            .map(convert_flag)
         {
-            let nm = NameSpace::root();
-            Self::add_global_flags_to_all_subcmds(&mut cmds, nm.clone());
-
-            for flag in &flags {
-                if !flag.is_global_itself() {
-                    continue;
-                }
-                for cmd in &mut cmds {
-                    Self::add_global_flag_to_cmd(flag, cmd, nm.clone());
-                }
-            }
-        }
-
-        let mut usage_spec = cuc::usage::UsageSpec {
-            info,
-            flags,
-            args,
-            cmds,
-            completes,
-        };
-        if let Some(spec) = chspec {
-            usage_spec = usage_spec.merge(spec);
-        }
-        Ok(usage_spec)
-    }
-
-    /// Merges other into self, by overriding values present in self from other
-    fn merge(mut self, other: Self) -> Self {
-        if !other.info.name.is_empty() {
-            self.info.name = other.info.name;
-        }
-        if !other.info.bin.is_empty() {
-            self.info.bin = other.info.bin;
-        }
-
-        for oflag in other.flags {
-            if let Some(index) = self.flags.iter().position(|f| f == &oflag) {
-                self.flags.remove(index);
-                self.flags.push(oflag);
-            }
-        }
-
-        for oarg in other.args {
-            if let Some(index) = self.args.iter().position(|a| a == &oarg) {
-                self.args.remove(index);
-                self.args.push(oarg);
-            }
-        }
-
-        for ocmd in other.cmds {
-            if let Some(index) = self.cmds.iter().position(|c| c == &ocmd) {
-                self.cmds.remove(index);
-                self.cmds.push(ocmd);
-            }
-        }
-
-        for (func_name, complete) in other.completes {
-            self.completes.insert(func_name, complete);
-        }
-
-        self
-    }
-
-    fn add_default_completes(completes: &mut HashMap<String, cuc::usage::Complete>) {
-        completes.insert("file".into(), cuc::usage::Complete::file_complete());
-        completes.insert("dir".into(), cuc::usage::Complete::dir_complete());
-    }
-
-    fn add_global_flag_to_cmd(flag: &cuc::usage::Flag, cmd: &mut cuc::usage::Cmd, nm: NameSpace) {
-        if flag.is_global_itself() {
-            let mut flag = flag.clone();
-            if !cmd.flags.contains(&flag) {
-                let global = cuc::usage::GlobalFlag::Imposed(nm);
-                flag.global = global;
-                cmd.flags.push(flag);
+            if !flags.contains(&flag) {
+                flags.push(flag);
             }
         }
     }
+    let inherited = flags
+        .iter()
+        .filter(|flag| flag.is_global_itself())
+        .cloned()
+        .map(|flag| (flag, root_namespace.clone()))
+        .collect::<Vec<_>>();
+    let root_sigils = spec
+        .cmd
+        .args
+        .iter()
+        .filter(|arg| !arg.hide && arg.sigil.is_some())
+        .map(convert_arg)
+        .collect::<Vec<_>>();
+    let cmds = spec
+        .cmd
+        .subcommands
+        .values()
+        .filter(|cmd| !cmd.hide)
+        .map(|cmd| {
+            convert_cmd(
+                cmd,
+                &root_namespace,
+                &inherited,
+                false,
+                &root_sigils,
+                pending,
+            )
+        })
+        .collect();
 
-    fn add_global_flags_to_all_subcmds<C>(cmds: &mut [C], nm: NameSpace)
-    where
-        C: BorrowMut<cuc::usage::Cmd>,
-    {
-        for cmd in cmds {
-            let cmd: &mut cuc::usage::Cmd = cmd.borrow_mut();
-            let chnm = nm.clone().join(&cmd.name);
-            Self::add_global_flags_to_all_subcmds(&mut cmd.cmds, chnm.clone());
+    cuc::usage::UsageSpec {
+        info: Info {
+            name: spec.name,
+            bin: spec.bin,
+        },
+        flags,
+        args: spec
+            .cmd
+            .args
+            .iter()
+            .filter(|arg| !arg.hide)
+            .map(convert_arg)
+            .collect(),
+        cmds,
+        completes: convert_completes(&spec.complete, &root_namespace),
+        default_subcommand: spec.default_subcommand,
+        default_subcommand_flags: spec.default_subcommand_flags,
+        pending_mounts: pending
+            .get(&root_namespace.display())
+            .cloned()
+            .unwrap_or_default(),
+        sigils: root_sigils,
+    }
+}
 
-            for flag in &cmd.flags {
-                if !flag.is_global_itself() {
-                    continue;
+fn convert_cmd(
+    command: &SpecCommand,
+    parent_namespace: &NameSpace,
+    inherited: &[(Flag, NameSpace)],
+    parent_mounted: bool,
+    inherited_sigils: &[Arg],
+    pending: &PendingMounts,
+) -> Cmd {
+    let namespace = parent_namespace.clone().join(&command.name);
+    let inherited = if command.mounted && !parent_mounted {
+        &[][..]
+    } else {
+        inherited
+    };
+    // A subcommand inherits the sigils its ancestors declared, so the sigil keeps
+    // classifying arguments at every depth.
+    let mut sigils = inherited_sigils.to_vec();
+    sigils.extend(
+        command
+            .args
+            .iter()
+            .filter(|arg| !arg.hide && arg.sigil.is_some())
+            .map(convert_arg),
+    );
+    let mut flags = command
+        .flags
+        .iter()
+        // A clause's flags are ordinary flags of the command: usage gathers them from
+        // the command and its clause alike when deciding what is available.
+        .chain(command.clause.iter().flat_map(|clause| &clause.flags))
+        .filter(|flag| !flag.hide)
+        .map(convert_flag)
+        .collect::<Vec<_>>();
+
+    for (flag, origin) in inherited {
+        if !flags.contains(flag) {
+            let mut imposed = flag.clone();
+            imposed.global = GlobalFlag::Imposed(origin.clone());
+            flags.push(imposed);
+        }
+    }
+
+    let mut child_inherited = inherited.to_vec();
+    child_inherited.extend(
+        flags
+            .iter()
+            .filter(|flag| flag.is_global_itself())
+            .cloned()
+            .map(|flag| (flag, namespace.clone())),
+    );
+
+    Cmd {
+        name: command.name.clone(),
+        help: command.help.clone().unwrap_or_default(),
+        hide: command.hide,
+        args: match &command.clause {
+            // A clause's positionals are the command's positionals: usage parses an
+            // active command's arguments from its clause whenever it has one.
+            Some(clause) => convert_clause_args(clause),
+            None => command
+                .args
+                .iter()
+                .filter(|arg| !arg.hide)
+                .map(convert_arg)
+                .collect(),
+        },
+        flags,
+        aliases: command
+            .aliases
+            .iter()
+            .map(|name| Alias {
+                name: name.clone(),
+                hide: false,
+            })
+            .chain(command.hidden_aliases.iter().map(|name| Alias {
+                name: name.clone(),
+                hide: true,
+            }))
+            .collect(),
+        cmds: command
+            .subcommands
+            .values()
+            .filter(|cmd| !cmd.hide)
+            .map(|cmd| {
+                Box::new(convert_cmd(
+                    cmd,
+                    &namespace,
+                    &child_inherited,
+                    command.mounted,
+                    &sigils,
+                    pending,
+                ))
+            })
+            .collect(),
+        completes: convert_completes(&command.complete, &namespace),
+        mounted: command.mounted,
+        pending_mounts: pending
+            .get(&namespace.display())
+            .cloned()
+            .unwrap_or_default(),
+        sigils,
+        restart_token: command.restart_token.clone(),
+    }
+}
+
+/// A clause is a repeatable group of scoped flags and positionals. Clink has no
+/// separator or repetition concept, so a repeated single-positional clause becomes one
+/// optional variadic argument, exactly as usage renders it, while a
+/// multi-positional separator clause stays a single group.
+fn convert_clause_args(clause: &SpecClause) -> Vec<Arg> {
+    let mut args = clause
+        .args
+        .iter()
+        .filter(|arg| !arg.hide)
+        .map(convert_arg)
+        .collect::<Vec<_>>();
+    if args.len() == 1 {
+        let arg = &mut args[0];
+        arg.required = false;
+        arg.var = true;
+        arg.min = Some(0);
+        arg.max = Some(-1);
+        arg.repr = clause.usage.clone();
+    }
+    args
+}
+
+fn convert_flag(flag: &SpecFlag) -> Flag {
+    let mut names = flag
+        .short
+        .iter()
+        .map(|name| format!("-{name}"))
+        .chain(flag.long.iter().map(|name| format!("--{name}")))
+        .collect::<Vec<_>>();
+    if let Some(negate) = &flag.negate {
+        names.push(negate.clone());
+    }
+
+    Flag {
+        name: flag.name.clone(),
+        names,
+        help: flag.help.clone().unwrap_or_default(),
+        hide: flag.hide,
+        global: flag.global.into(),
+        aliases: flag
+            .hidden_short_aliases
+            .iter()
+            .map(|name| Alias {
+                name: format!("-{name}"),
+                hide: true,
+            })
+            .chain(flag.hidden_aliases.iter().map(|name| Alias {
+                name: format!("--{name}"),
+                hide: true,
+            }))
+            .collect(),
+        arg: flag.arg.as_ref().map(convert_arg),
+    }
+}
+
+fn convert_arg(arg: &SpecArg) -> Arg {
+    Arg {
+        name: arg.name.clone(),
+        repr: arg.usage.clone(),
+        required: arg.required,
+        choices: arg
+            .choices
+            .as_ref()
+            .map(|choices| {
+                choices
+                    .choices
+                    .iter()
+                    .cloned()
+                    .chain(
+                        choices
+                            .details
+                            .iter()
+                            .filter(|choice| !choice.hide)
+                            .map(|choice| choice.value.clone()),
+                    )
+                    .collect()
+            })
+            .unwrap_or_default(),
+        hide: arg.hide,
+        var: arg.var,
+        min: arg.var.then(|| arg.var_min.unwrap_or(0) as i128),
+        max: arg
+            .var
+            .then(|| arg.var_max.map_or(-1, |value| value as i128)),
+        default: arg.default.first().cloned(),
+        sigil: arg.sigil.clone(),
+        double_dash: match arg.double_dash {
+            usage::SpecDoubleDashChoices::Automatic => DoubleDash::Automatic,
+            usage::SpecDoubleDashChoices::Optional => DoubleDash::Optional,
+            usage::SpecDoubleDashChoices::Required => DoubleDash::Required,
+            usage::SpecDoubleDashChoices::Preserve => DoubleDash::Preserve,
+        },
+    }
+}
+
+fn convert_completes(
+    completes: &indexmap::IndexMap<String, SpecComplete>,
+    namespace: &NameSpace,
+) -> HashMap<String, Complete> {
+    completes
+        .iter()
+        .filter_map(|(name, complete)| {
+            let kind = if let Some(run) = &complete.run {
+                CompleteKind::Run(run.clone())
+            } else {
+                match complete.type_.as_deref() {
+                    Some("file") => CompleteKind::File,
+                    Some("dir") => CompleteKind::Dir,
+                    _ => return None,
                 }
+            };
+            let scoped_name = if namespace.is_root() {
+                name.clone()
+            } else {
+                format!("{}::{name}", namespace.display())
+            };
+            Some((
+                name.to_lowercase(),
+                Complete {
+                    // Completion functions are global Lua symbols. Include the command scope
+                    // so equal argument names under different commands cannot overwrite one
+                    // another in the generator cache.
+                    name: scoped_name,
+                    kind,
+                    descs: complete.descriptions,
+                },
+            ))
+        })
+        .collect()
+}
 
-                for subcmd in &mut cmd.cmds {
-                    Self::add_global_flag_to_cmd(flag, subcmd, chnm.clone());
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(source: &str) -> cuc::usage::UsageSpec {
+        convert_spec(source.parse::<Spec>().unwrap(), &PendingMounts::default())
+    }
+
+    #[test]
+    fn parses_inline_flag_args_and_resolves_flagsets() {
+        let spec = parse(
+            r#"
+                name "demo"
+                bin "demo"
+                flagset "common" {
+                    flag "-v --verbose"
+                }
+                use "common"
+                flag "-u --user <user>" {
+                    choices "alice" "bob"
+                }
+            "#,
+        );
+
+        assert_eq!(spec.flags.len(), 2);
+        assert_eq!(spec.flags[0].names, ["-v", "--verbose"]);
+        let user = &spec.flags[1];
+        assert_eq!(user.names, ["-u", "--user"]);
+        let arg = user.arg.as_ref().unwrap();
+        assert_eq!(arg.name, "user");
+        assert_eq!(arg.repr, "<user>");
+        assert_eq!(arg.choices, ["alice", "bob"]);
+    }
+
+    #[test]
+    fn preserves_variadic_double_dash_and_default_subcommand_semantics() {
+        let spec = parse(
+            r#"
+                name "demo"
+                bin "demo"
+                default_subcommand "run"
+                default_subcommand_flags #true
+                arg "[args]" var=#true var_min=1 double_dash="required"
+                cmd "run" {
+                    flag "--jobs <count>"
+                    arg "[task]"
+                }
+            "#,
+        );
+
+        assert_eq!(spec.default_subcommand.as_deref(), Some("run"));
+        assert!(spec.default_subcommand_flags);
+        assert!(spec.flags.iter().any(|flag| flag.names == ["--jobs"]));
+        assert!(spec.args[0].var);
+        assert_eq!(spec.args[0].min, Some(1));
+        assert_eq!(spec.args[0].max, Some(-1));
+        assert_eq!(spec.args[0].double_dash, DoubleDash::Required);
+    }
+
+    #[test]
+    fn converts_resolved_mounts() {
+        let mut spec = r#"
+            name "demo"
+            bin "demo"
+            mount run="discover"
+        "#
+        .parse::<Spec>()
+        .unwrap();
+        spec.resolve_mount_outputs(&HashMap::from([(
+            "discover".to_string(),
+            "cmd \"mounted\" { flag \"--from-mount\" }".to_string(),
+        )]))
+        .unwrap();
+
+        let spec = convert_spec(spec, &PendingMounts::default());
+        assert_eq!(spec.cmds[0].name, "mounted");
+        assert!(spec.cmds[0].mounted);
+        assert_eq!(spec.cmds[0].flags[0].names, ["--from-mount"]);
+    }
+
+    #[test]
+    fn records_mounts_as_pending_without_running_them() {
+        let spec = r#"
+            name "demo"
+            bin "demo"
+            mount run="this-command-does-not-exist" synopsis="[TASK] [ARGS]…"
+            cmd "run" {
+                mount run="neither does this one" synopsis="[NAME]"
+            }
+        "#
+        .parse::<Spec>()
+        .unwrap();
+
+        let mut pending = PendingMounts::default();
+        collect_pending_mounts(&spec.cmd, &NameSpace::root(), &mut pending);
+        let spec = convert_spec(spec, &pending);
+
+        assert_eq!(
+            spec.pending_mounts,
+            [PendingMount {
+                run: "this-command-does-not-exist".into(),
+                synopsis: Some("[TASK] [ARGS]…".into()),
+            }]
+        );
+        assert_eq!(
+            spec.cmds[0].pending_mounts,
+            [PendingMount {
+                run: "neither does this one".into(),
+                synopsis: Some("[NAME]".into()),
+            }]
+        );
+        // Nothing is grafted: the mounted commands stay unknown until completion.
+        assert!(spec.cmds.iter().all(|cmd| cmd.cmds.is_empty()));
+    }
+
+    #[test]
+    fn includes_clause_flags_and_makes_its_positional_variadic() {
+        let spec = parse(
+            r#"
+                name "demo"
+                bin "demo"
+                cmd "use" {
+                    flag "--frozen"
+                    clause tools {
+                        flag "--postinstall <COMMAND>"
+                        flag "--tool-option <KEY=VALUE>" var=#true
+                        arg "<TOOL@VERSION>"
+                    }
+                }
+            "#,
+        );
+
+        let use_cmd = &spec.cmds[0];
+        let names = use_cmd
+            .flags
+            .iter()
+            .map(|flag| flag.names[0].as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["--frozen", "--postinstall", "--tool-option"]);
+
+        // An implicit clause repeats its single positional, so it is optional and
+        // variadic here, with the clause's own synopsis as its hint.
+        assert_eq!(use_cmd.args.len(), 1);
+        let arg = &use_cmd.args[0];
+        assert_eq!(arg.name, "TOOL@VERSION");
+        assert!(!arg.required);
+        assert!(arg.var);
+        assert_eq!(arg.min, Some(0));
+        assert_eq!(arg.max, Some(-1));
+        assert_eq!(arg.repr, "[TOOL@VERSION]…");
+    }
+
+    #[test]
+    fn clause_positionals_become_the_command_arguments() {
+        // usage rejects a command that declares both top-level arguments and a clause, so
+        // a command's positionals come from whichever of the two it has.
+        let spec = parse(
+            r#"
+                name "demo"
+                bin "demo"
+                cmd "a" {
+                    clause "tools" {
+                        arg "<TOOL>"
+                    }
+                }
+                cmd "b" {
+                    arg "[kept]"
+                }
+            "#,
+        );
+
+        let names = spec.cmds[0]
+            .args
+            .iter()
+            .map(|arg| arg.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["TOOL"]);
+        assert_eq!(spec.cmds[0].args[0].repr, "[TOOL]…");
+        assert_eq!(spec.cmds[1].args[0].name, "kept");
+        assert!(!spec.cmds[1].args[0].var);
+    }
+
+    #[test]
+    fn keeps_multi_positional_separator_clauses_as_one_group() {
+        let spec = parse(
+            r#"
+                name "demo"
+                bin "demo"
+                cmd "a" {
+                    clause "pair" separator=":::" {
+                        arg "[LEFT]"
+                        arg "[RIGHT]"
+                    }
+                }
+            "#,
+        );
+
+        let args = &spec.cmds[0].args;
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0].name, "LEFT");
+        assert_eq!(args[1].name, "RIGHT");
+        // Clink cannot repeat a group around a separator, so neither arg absorbs more.
+        assert!(args.iter().all(|arg| !arg.var));
+    }
+
+    #[test]
+    fn sigil_arguments_are_recorded_and_inherited_by_subcommands() {
+        let spec = parse(
+            r#"
+            name "demo"
+            bin "demo"
+            arg "[tools]..." sigil="+" {
+                choices "node@22"
+            }
+            cmd "run" {
+                arg "[task]"
+            }
+        "#,
+        );
+
+        assert_eq!(spec.sigils.len(), 1);
+        assert_eq!(spec.sigils[0].sigil.as_deref(), Some("+"));
+        assert_eq!(spec.sigils[0].choices, ["node@22"]);
+        // A subcommand inherits the sigils its ancestors declared.
+        assert_eq!(spec.cmds[0].sigils.len(), 1);
+        assert_eq!(spec.cmds[0].sigils[0].sigil.as_deref(), Some("+"));
+    }
+
+    #[test]
+    fn command_scoped_completers_have_distinct_function_identities() {
+        let spec = parse(
+            r#"
+            name "demo"
+            bin "demo"
+            cmd "one" {
+                arg "<target>"
+                complete target run="echo one"
+            }
+            cmd "two" {
+                arg "<target>"
+                complete target run="echo two"
+            }
+        "#,
+        );
+
+        let one = spec.cmds[0].completes.get("target").unwrap();
+        let two = spec.cmds[1].completes.get("target").unwrap();
+        assert_eq!(one.name, "one::target");
+        assert_eq!(two.name, "two::target");
+        assert_ne!(one.name, two.name);
+    }
+
+    #[test]
+    fn restart_token_is_recorded_on_the_command() {
+        let spec = parse(
+            r#"
+            name "demo"
+            bin "demo"
+            cmd "run" restart_token=":::" {
+                arg "[task]"
+            }
+        "#,
+        );
+
+        assert_eq!(spec.cmds[0].restart_token.as_deref(), Some(":::"));
+    }
+
+    #[test]
+    fn records_nested_mounts_in_their_own_namespace() {
+        let spec = r#"
+            name "demo"
+            bin "demo"
+            cmd "a" {
+                cmd "b" {
+                    mount run="discover"
                 }
             }
-        }
+        "#
+        .parse::<Spec>()
+        .unwrap();
+
+        let mut pending = PendingMounts::default();
+        collect_pending_mounts(&spec.cmd, &NameSpace::root(), &mut pending);
+        let spec = convert_spec(spec, &pending);
+
+        assert!(spec.pending_mounts.is_empty());
+        assert!(spec.cmds[0].pending_mounts.is_empty());
+        assert_eq!(spec.cmds[0].cmds[0].pending_mounts[0].run, "discover");
     }
 }
