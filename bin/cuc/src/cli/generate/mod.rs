@@ -47,8 +47,10 @@ pub struct Generate {
 impl Generate {
     pub fn run(self) -> anyhow::Result<()> {
         let usage_spec = cuc::usage::UsageSpec::load(self.usage_spec.as_ref())?;
-        let mut genrtr = Generator::default();
-        genrtr.spec = usage_spec;
+        let mut genrtr = Generator {
+            spec: usage_spec,
+            ..Default::default()
+        };
         cuc::usage::UsageSpec::add_default_completes(&mut genrtr.spec.completes);
         if self.complete {
             genrtr.completor = Some(Completor {
@@ -66,7 +68,11 @@ impl Generate {
         };
         let usage_completions = genv.generate();
         if let Some(out) = self.out {
-            let mut file = OpenOptions::new().create(true).write(true).open(&out)?;
+            let mut file = OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .open(&out)?;
             write!(file, "{}", usage_completions)?;
         } else {
             write!(std::io::stdout(), "{}", usage_completions)?;
@@ -81,10 +87,7 @@ impl Generate {
 
         let failure_message = "failed to find bash shell! Try again with inputting the shell flag";
         let git_bins = which::which_all_global("git.exe")
-            .map_err(|e| {
-                eprintln!("[ERROR] failed to find git.exe!");
-                e
-            })
+            .inspect_err(|_| eprintln!("[ERROR] failed to find git.exe!"))
             .context(failure_message)?;
 
         for git_bin in git_bins {
@@ -148,7 +151,7 @@ impl Generate {
                     "failed to read scoop shim: {}",
                     shim_path.to_string_lossy()
                 ))?;
-                return Ok(shim.path().to_path_buf());
+                Ok(shim.path().to_path_buf())
             }
         }
     }
@@ -156,4 +159,34 @@ impl Generate {
 
 enum ShimType {
     Scoop,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_file_is_truncated_before_writing() {
+        let test_dir = std::env::temp_dir().join(format!("cuc-test-{}", std::process::id()));
+        std::fs::create_dir_all(&test_dir).unwrap();
+        let spec_path = test_dir.join("usage.kdl");
+        let output_path = test_dir.join("usage.lua");
+        std::fs::write(&spec_path, "name \"demo\"\nbin \"demo\"\n").unwrap();
+        std::fs::write(&output_path, format!("{}STALE", "x".repeat(16_384))).unwrap();
+
+        Generate {
+            usage_spec: Some(spec_path),
+            arg_matchers: Vec::new(),
+            out: Some(output_path.clone()),
+            complete: false,
+            shell: None,
+        }
+        .run()
+        .unwrap();
+
+        let output = std::fs::read_to_string(&output_path).unwrap();
+        assert!(!output.contains("STALE"));
+        assert!(output.ends_with(":nofiles()"));
+        std::fs::remove_dir_all(test_dir).unwrap();
+    }
 }

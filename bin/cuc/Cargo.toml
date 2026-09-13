@@ -1,6 +1,6 @@
 [package]
 name = "cuc-cli"
-version = "0.2.7"
+version = "0.3.0-dev.1"
 edition = "2024"
 description = "A CLI tool to generate clink argmatcher completions from the usage spec."
 authors = { workspace = true }
@@ -19,8 +19,10 @@ anyhow = "1.0.104"
 base64 = "0.23.1"
 clap = { version = "4.6.6", features = ["derive"] }
 cuc-lib = { workspace = true }
-clap_usage = "5.0.0"
+clap_usage = { git = "https://github.com/jdx/usage", tag = "v6.9.0" }
+usage = { package = "usage-lib", git = "https://github.com/jdx/usage", tag = "v6.9.0", default-features = false }
 kdl = "6"
+indexmap = "2.13.0"
 tera = "2"
 which = "8.0.5"
 winsplit = "0.1.0"

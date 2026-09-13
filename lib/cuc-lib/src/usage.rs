@@ -13,6 +13,13 @@ pub struct UsageSpec {
     pub args: Vec<Arg>,
     pub cmds: Vec<Cmd>,
     pub completes: HashMap<String, Complete>,
+    pub default_subcommand: Option<String>,
+    pub default_subcommand_flags: bool,
+    /// Root-level mounts, whose commands the generated completion discovers by
+    /// running them.
+    pub pending_mounts: Vec<PendingMount>,
+    /// Root-level sigil arguments.
+    pub sigils: Vec<Arg>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -65,6 +72,20 @@ pub struct Arg {
     pub min: Option<i128>,
     pub max: Option<i128>,
     pub default: Option<String>,
+    pub double_dash: DoubleDash,
+    /// A leading prefix that classifies this argument independently of its place in
+    /// the positional sequence, e.g. `+` for `+node`. The prefix is removed before the
+    /// value is stored or completed.
+    pub sigil: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum DoubleDash {
+    Automatic,
+    #[default]
+    Optional,
+    Required,
+    Preserve,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -76,6 +97,27 @@ pub struct Cmd {
     pub flags: Vec<Flag>,
     pub aliases: Vec<Alias>,
     pub cmds: Vec<Box<Cmd>>,
+    pub completes: HashMap<String, Complete>,
+    pub mounted: bool,
+    /// Mounts declared by this command. Their commands are discovered by running the
+    /// mount while completing, never while generating.
+    pub pending_mounts: Vec<PendingMount>,
+    /// Sigil arguments in effect here: this command's own plus every ancestor's, because
+    /// a subcommand inherits the sigils declared by its ancestors.
+    pub sigils: Vec<Arg>,
+    /// Token that restarts argument parsing, letting one command line hold several
+    /// invocations of this command.
+    pub restart_token: Option<String>,
+}
+
+/// A Usage `mount`: the mounted commands are discovered by running `run` while
+/// completing, as usage itself does when it resolves a mount.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct PendingMount {
+    /// Command executed while completing to print the mounted command names.
+    pub run: String,
+    /// Placeholder shown for the discovered commands, e.g. `[TASK] [ARGS]…`.
+    pub synopsis: Option<String>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -85,8 +127,9 @@ pub struct Complete {
     pub descs: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum CompleteKind {
+    #[default]
     None,
     File,
     Dir,
@@ -293,12 +336,12 @@ pub fn parse_flag(node: &KdlNode) -> Result<Flag, UError> {
                 "alias" => flag.aliases = parse_alias(child_node)?,
                 "choices" => {
                     if let Some(arg_name) = flag.names.pop() {
-                        let mut arg = Arg::default();
-                        arg.name = arg_name;
-                        arg.choices = parse_choices(child_node)?;
-                        if arg.name.starts_with("<") {
-                            arg.required = true;
-                        }
+                        let arg = Arg {
+                            required: arg_name.starts_with('<'),
+                            name: arg_name,
+                            choices: parse_choices(child_node)?,
+                            ..Default::default()
+                        };
                         flag.arg = Some(arg);
                     }
                 }
@@ -366,7 +409,7 @@ pub fn parse_arg(node: &KdlNode) -> Result<Arg, UError> {
                     let choice = cn_entry
                         .value()
                         .as_string()
-                        .expect(format!("No choice found in {:?}", cn_entry).as_str())
+                        .unwrap_or_else(|| panic!("No choice found in {:?}", cn_entry))
                         .to_string();
                     choices.push(choice);
                 }
@@ -480,9 +523,8 @@ pub fn parse_complete(node: &KdlNode) -> Result<Complete, UError> {
                 }
                 "type" => {
                     let arg_type = entry.value().as_string().unwrap_or_default();
-                    match arg_type {
-                        "file" => complete.kind = CompleteKind::File,
-                        _ => {}
+                    if arg_type == "file" {
+                        complete.kind = CompleteKind::File;
                     }
                 }
                 _ => {}
@@ -561,17 +603,11 @@ impl Eq for Complete {}
 
 impl CompleteKind {
     pub fn is_none(&self) -> bool {
-        match self {
-            Self::None => true,
-            _ => false,
-        }
+        matches!(self, Self::None)
     }
 
     pub fn is_file(&self) -> bool {
-        match self {
-            Self::File => true,
-            _ => false,
-        }
+        matches!(self, Self::File)
     }
 
     pub fn run(&self) -> Option<&String> {
@@ -614,12 +650,6 @@ impl AsRef<Cmd> for Cmd {
     }
 }
 
-impl Default for CompleteKind {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
 impl From<bool> for GlobalFlag {
     fn from(value: bool) -> Self {
         match value {
@@ -631,23 +661,14 @@ impl From<bool> for GlobalFlag {
 
 impl Flag {
     pub fn is_global(&self) -> bool {
-        match self.global {
-            GlobalFlag::None => false,
-            _ => true,
-        }
+        !matches!(self.global, GlobalFlag::None)
     }
 
     pub fn is_global_itself(&self) -> bool {
-        match self.global {
-            GlobalFlag::Itself => true,
-            _ => false,
-        }
+        matches!(self.global, GlobalFlag::Itself)
     }
 
     pub fn is_global_imposed(&self) -> bool {
-        match self.global {
-            GlobalFlag::Imposed(_) => true,
-            _ => false,
-        }
+        matches!(self.global, GlobalFlag::Imposed(_))
     }
 }

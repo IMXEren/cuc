@@ -1,44 +1,77 @@
-# cuc ([Clink](https://github.com/chrisant996/clink) [Usage](https://github.com/jdx/usage) Completions)
+# cuc ([Clink](https://github.com/chrisant996/clink) [Usage](https://usage.jdx.dev/) Completions)
 
-A CLI tool to generate clink argmatcher completions from the usage spec.
+Generate [Clink](https://github.com/chrisant996/clink) argmatchers from a [Usage](https://usage.jdx.dev/spec/reference/) specification.
 
 ## Installation
 
-1. Go to [Releases](https://github.com/IMXEren/cuc/releases/latest) and download the executable to a desired location. You could also use powershell to download
+1. Download the appropriate executable from [Releases](https://github.com/IMXEren/cuc/releases/latest).
+2. Make these Lua modules available through `package.path` (for example from `!init.lua` or `.init.lua`):
+   - [arghelper.lua](./modules/arghelper.lua)
+   - [base64.lua](./modules/base64.lua)
+3. Put the generated Lua file in a Clink scripts directory, or load it explicitly.
 
-    ```pwsh
-    Invoke-RestMethod "https://github.com/IMXEren/cuc/releases/download/v0.1.0/cuc-v0.1.0-x64.exe" -OutFile "cuc.exe"
-    ```
+See [mise-clink](https://github.com/binyaminyblatt/mise-clink) for a complete integration.
 
-2. The generated `usage.completions.lua` requires that you have these modules in your package.path (you can also use `!init.lua` or `.init.lua`, to ensure the modules are added to package.path):
+## Generating completions
 
-    - [arghelper.lua](./modules/arghelper.lua)
-    - [base64.lua](./modules/base64.lua)
+Read a specification from a file:
 
-3. For dynamic completion i.e. a usage.spec.kdl that uses `complete`, you'd need a shell while generating. The `complete` node in the spec uses run command that require unix shells. As a workaround, you can use git-bash which would work fine (CLI already uses it). So, you'd need to specify when using shell other than git-bash (or if not found) like MSYS2 environment.
+```pwsh
+cuc generate usage.kdl --out usage.lua
+```
 
-4. For loading completions, you can either provide the spec from a file or by stdin.
+Or from stdin:
 
-    ```lua
-    load(io.popen("abs/path/cuc.exe generate [OPTIONS] abs/path/usage.kdl"):read("*a"))()
-    load(io.popen("mycli usage | abs/path/cuc.exe generate [OPTIONS]"):read("*a"))()
-    ```
+```pwsh
+mycli usage | cuc generate --out usage.lua
+```
 
-5. For an example, you can check out [mise-clink](https://github.com/binyaminyblatt/mise-clink).
+Use `--complete` when the specification contains runtime `complete run=...` entries or `mount` nodes:
 
-## Unsupported Features
+```pwsh
+mycli usage | cuc generate --complete --out usage.lua
+```
 
-There are some of the features currently unsupported by cuc generated completions, which may be supported by usage completions.
+Dynamic completion uses Bash. cuc locates Git Bash automatically, or accepts an explicit executable:
 
-1. `config` and it's related properties.
-2. `*_help`
-3. `example`
-4. `source_code_link_template`
-5. `version`
-6. `author`
-7. `license`
-8. `about`
-9. `arg > parse, double_dash`
-10. `flag > count, env, config, required_*, overrides`
-11. `cmd > subcommand_required, mount`
-12. `complete > descriptions`
+```pwsh
+mycli usage | cuc generate --complete --shell C:\msys64\usr\bin\bash.exe --out usage.lua
+```
+
+The generated script embeds the paths to `cuc` and the selected shell, which must remain available when Clink requests completions. Without `--complete`, runtime completers and mounts are silently omitted; ordinary flags, arguments, and commands are still generated.
+
+To generate at Clink startup instead of writing a file:
+
+```lua
+load(io.popen("mycli usage | C:\\path\\to\\cuc.exe generate --complete"):read("*a"))()
+```
+
+## Usage support
+
+cuc parses specifications with the official `usage-lib` parser. This includes strict current syntax, `include`, and `flagset`/`use` resolution.
+
+Completion-relevant support includes:
+
+- commands, visible aliases, flags, global flags, inline flag arguments, positionals, choices, defaults, and variadic arguments;
+- root and command-scoped `complete` entries for `run`, `file`, and `dir`;
+- `default_subcommand` and `default_subcommand_flags`;
+- `arg.double_dash` modes, mapped to the closest available Clink parser behavior;
+- clauses, including clause flags and their active positionals;
+- dynamic mounts, resolved in the completion-time working directory;
+- sigil arguments with fixed choices or runtime `run` completion;
+- `restart_token` argument parsing; and
+- hidden commands, flags, and aliases being excluded from suggestions.
+
+## Known limitations
+
+These limitations are deliberate where Clink has no equivalent construct:
+
+- `group` is ignored. Validation relationships such as `conflicts`, `requires`, `overrides`, `required_if`, and `subcommand_required` do not filter suggestions.
+- A single-positional clause is represented as one optional variadic argument. Clink cannot model a repeatable multi-positional clause separated by a token, so such a clause is emitted as one non-repeating positional group.
+- Mounts are never snapshotted while generating. They require `--complete`; otherwise they are ignored. Dynamic mounts expose the mounted root command names, but do not graft the mounted commands' nested flags or argument trees. Mounted names are emitted without descriptions because `:` may be part of a command name.
+- `restart_token` uses a generated parser chain and supports three further restarts. Clink parser links cannot form the cycle needed for unbounded repetition; additional tokens fall back to ordinary matching.
+- `%` sigils are shadowed by Clink's environment-variable match generator and therefore cannot be completed. Dynamic sigils currently require `complete run=...`; fixed `choices` work without `--complete`.
+- Dynamic completion descriptions are used only to strip the description suffix; they are not displayed as Clink match descriptions.
+- Other Usage completion types (for example `path`, `command`, and `command_args`) are currently ignored unless represented by a `run` completer.
+- Validation- or execution-oriented properties such as `flag.count`, `delimiter`, `unknown_flags`, environment/config bindings, and `config` are not represented in generated completion behavior.
+- Informational nodes and properties such as help variants, examples, version, author, license, repository, and source links are not emitted unless they supply command/flag descriptions already supported by Clink.
