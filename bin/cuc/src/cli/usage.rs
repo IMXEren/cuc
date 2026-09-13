@@ -26,7 +26,11 @@ impl Usage {
         let bin_name = cmd.get_bin_name().unwrap_or("cuc").to_string();
         eprintln!("Generating usage spec...");
         let mut buf: Box<dyn Write> = if let Some(path) = self.out {
-            let file = OpenOptions::new().create(true).write(true).open(path)?;
+            let file = OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .open(path)?;
             Box::new(file)
         } else {
             Box::new(std::io::stdout())
