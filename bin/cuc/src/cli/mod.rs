@@ -32,13 +32,13 @@ pub enum Commands {
 
 impl Commands {
     pub fn run(self) -> anyhow::Result<()> {
-        let result = match self {
+        match self {
             Commands::Generate(cmd) => cmd.run()?,
             Commands::Complete(cmd) => cmd.run()?,
             Commands::Subcommands(cmd) => cmd.run()?,
             Commands::Usage(cmd) => cmd.run()?,
             Commands::LastModified(cmd) => cmd.run()?,
-        };
-        Ok(result)
+        }
+        Ok(())
     }
 }

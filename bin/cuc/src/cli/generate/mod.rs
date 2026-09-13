@@ -47,8 +47,10 @@ pub struct Generate {
 impl Generate {
     pub fn run(self) -> anyhow::Result<()> {
         let usage_spec = cuc::usage::UsageSpec::load(self.usage_spec.as_ref())?;
-        let mut genrtr = Generator::default();
-        genrtr.spec = usage_spec;
+        let mut genrtr = Generator {
+            spec: usage_spec,
+            ..Default::default()
+        };
         cuc::usage::UsageSpec::add_default_completes(&mut genrtr.spec.completes);
         if self.complete {
             genrtr.completor = Some(Completor {
@@ -85,10 +87,7 @@ impl Generate {
 
         let failure_message = "failed to find bash shell! Try again with inputting the shell flag";
         let git_bins = which::which_all_global("git.exe")
-            .map_err(|e| {
-                eprintln!("[ERROR] failed to find git.exe!");
-                e
-            })
+            .inspect_err(|_| eprintln!("[ERROR] failed to find git.exe!"))
             .context(failure_message)?;
 
         for git_bin in git_bins {
@@ -152,7 +151,7 @@ impl Generate {
                     "failed to read scoop shim: {}",
                     shim_path.to_string_lossy()
                 ))?;
-                return Ok(shim.path().to_path_buf());
+                Ok(shim.path().to_path_buf())
             }
         }
     }

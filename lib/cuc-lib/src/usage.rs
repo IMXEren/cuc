@@ -127,8 +127,9 @@ pub struct Complete {
     pub descs: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum CompleteKind {
+    #[default]
     None,
     File,
     Dir,
@@ -335,12 +336,12 @@ pub fn parse_flag(node: &KdlNode) -> Result<Flag, UError> {
                 "alias" => flag.aliases = parse_alias(child_node)?,
                 "choices" => {
                     if let Some(arg_name) = flag.names.pop() {
-                        let mut arg = Arg::default();
-                        arg.name = arg_name;
-                        arg.choices = parse_choices(child_node)?;
-                        if arg.name.starts_with("<") {
-                            arg.required = true;
-                        }
+                        let arg = Arg {
+                            required: arg_name.starts_with('<'),
+                            name: arg_name,
+                            choices: parse_choices(child_node)?,
+                            ..Default::default()
+                        };
                         flag.arg = Some(arg);
                     }
                 }
@@ -408,7 +409,7 @@ pub fn parse_arg(node: &KdlNode) -> Result<Arg, UError> {
                     let choice = cn_entry
                         .value()
                         .as_string()
-                        .expect(format!("No choice found in {:?}", cn_entry).as_str())
+                        .unwrap_or_else(|| panic!("No choice found in {:?}", cn_entry))
                         .to_string();
                     choices.push(choice);
                 }
@@ -522,9 +523,8 @@ pub fn parse_complete(node: &KdlNode) -> Result<Complete, UError> {
                 }
                 "type" => {
                     let arg_type = entry.value().as_string().unwrap_or_default();
-                    match arg_type {
-                        "file" => complete.kind = CompleteKind::File,
-                        _ => {}
+                    if arg_type == "file" {
+                        complete.kind = CompleteKind::File;
                     }
                 }
                 _ => {}
@@ -603,17 +603,11 @@ impl Eq for Complete {}
 
 impl CompleteKind {
     pub fn is_none(&self) -> bool {
-        match self {
-            Self::None => true,
-            _ => false,
-        }
+        matches!(self, Self::None)
     }
 
     pub fn is_file(&self) -> bool {
-        match self {
-            Self::File => true,
-            _ => false,
-        }
+        matches!(self, Self::File)
     }
 
     pub fn run(&self) -> Option<&String> {
@@ -656,12 +650,6 @@ impl AsRef<Cmd> for Cmd {
     }
 }
 
-impl Default for CompleteKind {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
 impl From<bool> for GlobalFlag {
     fn from(value: bool) -> Self {
         match value {
@@ -673,23 +661,14 @@ impl From<bool> for GlobalFlag {
 
 impl Flag {
     pub fn is_global(&self) -> bool {
-        match self.global {
-            GlobalFlag::None => false,
-            _ => true,
-        }
+        !matches!(self.global, GlobalFlag::None)
     }
 
     pub fn is_global_itself(&self) -> bool {
-        match self.global {
-            GlobalFlag::Itself => true,
-            _ => false,
-        }
+        matches!(self.global, GlobalFlag::Itself)
     }
 
     pub fn is_global_imposed(&self) -> bool {
-        match self.global {
-            GlobalFlag::Imposed(_) => true,
-            _ => false,
-        }
+        matches!(self.global, GlobalFlag::Imposed(_))
     }
 }

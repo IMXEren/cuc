@@ -130,7 +130,7 @@ end
             if self.arg_matchers.is_empty() {
                 format!("\nclink.argmatcher(\"{}\")", self.spec.info.bin)
             } else {
-                format!("\nlocal matcher = clink.argmatcher()")
+                "\nlocal matcher = clink.argmatcher()".to_string()
             }
         };
 
@@ -243,10 +243,10 @@ end
 
             // Add all non global flags
             if !flag.is_global() {
-                let body = self.add_flag_body(flag, &fmt);
+                let body = self.add_flag_body(flag, fmt);
                 if !body.is_empty() {
                     completions += &body;
-                    completions += &entry_delim(&fmt);
+                    completions += &entry_delim(fmt);
                 }
                 found_non_global_flag = true;
             } else {
@@ -256,13 +256,13 @@ end
 
         for body in sigil_bodies.iter() {
             completions += body;
-            completions += &entry_delim(&fmt);
+            completions += &entry_delim(fmt);
             found_non_global_flag = true;
         }
 
         let ns = fmt.ns.view();
         if !flags.is_empty() || found_non_global_flag {
-            let entry_delim = entry_delim(&fmt);
+            let entry_delim = entry_delim(fmt);
 
             // A namespace only defines a global flag function when it declares global
             // flags itself, so an inherited global may belong to any ancestor. Walk the
@@ -355,15 +355,17 @@ end
             }
 
             completions += "{ \"";
-            completions += &name;
+            completions += name;
             completions += "\"";
 
-            if let Some(function) = self.cached_functions.get(&func_name) {
-                if !function.is_empty() {
-                    completions += " .. ";
-                    completions += &func_name;
-                    completions += "() ";
-                }
+            if self
+                .cached_functions
+                .get(&func_name)
+                .is_some_and(|function| !function.is_empty())
+            {
+                completions += " .. ";
+                completions += &func_name;
+                completions += "() ";
             }
 
             if let Some(ref arg) = flag.arg {
@@ -634,15 +636,14 @@ end
                 completions += name;
                 completions += "\"";
 
-                let subcmds = cmd.cmds.as_slice();
-                if !cmd.flags.is_empty() || !subcmds.is_empty() || !cmd.args.is_empty() {
-                    if let Some(function) = self.cached_functions.get(&func_name) {
-                        if !function.is_empty() {
-                            completions += " .. ";
-                            completions += &func_name;
-                            completions += "()";
-                        }
-                    }
+                if self
+                    .cached_functions
+                    .get(&func_name)
+                    .is_some_and(|function| !function.is_empty())
+                {
+                    completions += " .. ";
+                    completions += &func_name;
+                    completions += "()";
                 }
                 if !cmd.help.is_empty() {
                     completions += &format!(", [===[{}]===]", cmd.help);

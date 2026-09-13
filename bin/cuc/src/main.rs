@@ -11,12 +11,9 @@ use crate::cli::Cli;
 fn main() {
     let cli = Cli::parse();
     if let Some(subcmd) = cli.command {
-        match subcmd.run() {
-            Err(e) => {
-                eprintln!("[ERROR] {:?}", e);
-                exit(1)
-            }
-            _ => {}
+        if let Err(e) = subcmd.run() {
+            eprintln!("[ERROR] {:?}", e);
+            exit(1)
         }
         exit(0);
     }

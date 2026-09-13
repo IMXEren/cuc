@@ -5,8 +5,7 @@ pub fn encode<S>(source: S) -> String
 where
     S: AsRef<str>,
 {
-    let encoded = BASE64_STANDARD.encode(source.as_ref());
-    encoded
+    BASE64_STANDARD.encode(source.as_ref())
 }
 
 pub fn decode<S>(source: S) -> anyhow::Result<String>

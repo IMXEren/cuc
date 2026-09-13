@@ -34,6 +34,6 @@ impl GenFormatter {
     where
         W: fmt::Write,
     {
-        write!(buf, "\n").unwrap();
+        writeln!(buf).unwrap();
     }
 }

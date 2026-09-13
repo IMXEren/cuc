@@ -135,7 +135,7 @@ impl NameSpaceView<'_> {
     {
         let mut func_name = String::from("_cmd_");
         Self::join_func_str(&mut func_name, self.as_func_str());
-        func_name += &name.as_ref();
+        func_name += name.as_ref();
         func_name
     }
 }
