@@ -64,13 +64,16 @@ fn collect_pending_mounts(cmd: &SpecCommand, namespace: &NameSpace, pending: &mu
             .extend(cmd.mounts.iter().map(|mount| PendingMount {
                 run: mount.run.clone(),
                 synopsis: mount.synopsis.clone(),
+                overrides_default: mount.overrides_default,
             }));
     }
 
     for subcommand in cmd.subcommands.values() {
         collect_pending_mounts(
             subcommand,
-            &namespace.clone().join(&subcommand.name),
+            &namespace
+                .clone()
+                .join(cuc::namespace::slugify(&subcommand.name)),
             pending,
         );
     }
@@ -82,6 +85,7 @@ fn convert_spec(spec: Spec, pending: &PendingMounts) -> cuc::usage::UsageSpec {
         .cmd
         .flags
         .iter()
+        .chain(spec.cmd.clause.iter().flat_map(|clause| &clause.flags))
         .filter(|flag| !flag.hide)
         .map(convert_flag)
         .collect::<Vec<_>>();
@@ -91,13 +95,15 @@ fn convert_spec(spec: Spec, pending: &PendingMounts) -> cuc::usage::UsageSpec {
             .as_ref()
             .and_then(|name| spec.cmd.subcommands.get(name))
     {
-        for flag in default
+        for mut flag in default
             .flags
             .iter()
+            .chain(default.clause.iter().flat_map(|clause| &clause.flags))
             .filter(|flag| !flag.hide)
             .map(convert_flag)
         {
             if !flags.contains(&flag) {
+                flag.link_to = Some(default.name.clone());
                 flags.push(flag);
             }
         }
@@ -110,11 +116,28 @@ fn convert_spec(spec: Spec, pending: &PendingMounts) -> cuc::usage::UsageSpec {
         .collect::<Vec<_>>();
     let root_sigils = spec
         .cmd
-        .args
+        .clause
+        .as_ref()
+        .map(|clause| &clause.args)
+        .unwrap_or(&spec.cmd.args)
         .iter()
         .filter(|arg| !arg.hide && arg.sigil.is_some())
         .map(convert_arg)
         .collect::<Vec<_>>();
+    let mut completes = convert_completes(&spec.complete, &root_namespace);
+    if spec.default_subcommand_flags
+        && let Some(default) = spec
+            .default_subcommand
+            .as_ref()
+            .and_then(|name| spec.cmd.subcommands.get(name))
+    {
+        completes.extend(convert_completes(&default.complete, &root_namespace));
+    }
+    let mut args = match &spec.cmd.clause {
+        Some(clause) => convert_clause_args(clause),
+        None => spec.cmd.args.iter().map(convert_arg).collect(),
+    };
+    mark_double_dash_jump(&mut args);
     let cmds = spec
         .cmd
         .subcommands
@@ -131,6 +154,14 @@ fn convert_spec(spec: Spec, pending: &PendingMounts) -> cuc::usage::UsageSpec {
             )
         })
         .collect();
+    let mut root_mounts = pending
+        .get(&root_namespace.display())
+        .cloned()
+        .unwrap_or_default();
+    if spec.default_subcommand.is_some() && !root_mounts.iter().any(|mount| mount.overrides_default)
+    {
+        root_mounts.clear();
+    }
 
     cuc::usage::UsageSpec {
         info: Info {
@@ -138,22 +169,15 @@ fn convert_spec(spec: Spec, pending: &PendingMounts) -> cuc::usage::UsageSpec {
             bin: spec.bin,
         },
         flags,
-        args: spec
-            .cmd
-            .args
-            .iter()
-            .filter(|arg| !arg.hide)
-            .map(convert_arg)
-            .collect(),
+        args,
         cmds,
-        completes: convert_completes(&spec.complete, &root_namespace),
+        completes,
         default_subcommand: spec.default_subcommand,
         default_subcommand_flags: spec.default_subcommand_flags,
-        pending_mounts: pending
-            .get(&root_namespace.display())
-            .cloned()
-            .unwrap_or_default(),
+        pending_mounts: root_mounts,
         sigils: root_sigils,
+        restart_token: spec.cmd.restart_token,
+        clause: spec.cmd.clause.as_ref().map(convert_clause),
     }
 }
 
@@ -165,18 +189,31 @@ fn convert_cmd(
     inherited_sigils: &[Arg],
     pending: &PendingMounts,
 ) -> Cmd {
-    let namespace = parent_namespace.clone().join(&command.name);
+    let namespace = parent_namespace
+        .clone()
+        .join(cuc::namespace::slugify(&command.name));
     let inherited = if command.mounted && !parent_mounted {
         &[][..]
     } else {
         inherited
     };
+    let mount_prefix_flags = inherited
+        .iter()
+        .map(|(flag, origin)| {
+            let mut flag = flag.clone();
+            flag.global = GlobalFlag::Imposed(origin.clone());
+            flag
+        })
+        .collect::<Vec<_>>();
     // A subcommand inherits the sigils its ancestors declared, so the sigil keeps
     // classifying arguments at every depth.
     let mut sigils = inherited_sigils.to_vec();
     sigils.extend(
         command
-            .args
+            .clause
+            .as_ref()
+            .map(|clause| &clause.args)
+            .unwrap_or(&command.args)
             .iter()
             .filter(|arg| !arg.hide && arg.sigil.is_some())
             .map(convert_arg),
@@ -208,21 +245,23 @@ fn convert_cmd(
             .map(|flag| (flag, namespace.clone())),
     );
 
+    let mut args = match &command.clause {
+        Some(clause) => convert_clause_args(clause),
+        None => command.args.iter().map(convert_arg).collect(),
+    };
+    mark_double_dash_jump(&mut args);
+    let pending_mounts = pending
+        .get(&namespace.display())
+        .cloned()
+        .unwrap_or_default();
+
     Cmd {
         name: command.name.clone(),
         help: command.help.clone().unwrap_or_default(),
         hide: command.hide,
-        args: match &command.clause {
-            // A clause's positionals are the command's positionals: usage parses an
-            // active command's arguments from its clause whenever it has one.
-            Some(clause) => convert_clause_args(clause),
-            None => command
-                .args
-                .iter()
-                .filter(|arg| !arg.hide)
-                .map(convert_arg)
-                .collect(),
-        },
+        // A clause's positionals are the command's positionals: usage parses an
+        // active command's arguments from its clause whenever it has one.
+        args,
         flags,
         aliases: command
             .aliases
@@ -253,12 +292,33 @@ fn convert_cmd(
             .collect(),
         completes: convert_completes(&command.complete, &namespace),
         mounted: command.mounted,
-        pending_mounts: pending
-            .get(&namespace.display())
-            .cloned()
-            .unwrap_or_default(),
+        pending_mounts,
+        mount_prefix_flags,
         sigils,
         restart_token: command.restart_token.clone(),
+        clause: command.clause.as_ref().map(convert_clause),
+    }
+}
+
+fn convert_clause(clause: &SpecClause) -> cuc::usage::Clause {
+    let mut args = clause.args.iter().map(convert_arg).collect::<Vec<_>>();
+    mark_double_dash_jump(&mut args);
+    cuc::usage::Clause {
+        name: clause.name.clone(),
+        separator: clause.separator.clone(),
+        help: clause.help.clone().unwrap_or_default(),
+        flags: clause
+            .flags
+            .iter()
+            .filter(|flag| !flag.hide)
+            .map(convert_flag)
+            .collect(),
+        sigils: args
+            .iter()
+            .filter(|arg| !arg.hide && arg.sigil.is_some())
+            .cloned()
+            .collect(),
+        args,
     }
 }
 
@@ -267,12 +327,7 @@ fn convert_cmd(
 /// optional variadic argument, exactly as usage renders it, while a
 /// multi-positional separator clause stays a single group.
 fn convert_clause_args(clause: &SpecClause) -> Vec<Arg> {
-    let mut args = clause
-        .args
-        .iter()
-        .filter(|arg| !arg.hide)
-        .map(convert_arg)
-        .collect::<Vec<_>>();
+    let mut args = clause.args.iter().map(convert_arg).collect::<Vec<_>>();
     if args.len() == 1 {
         let arg = &mut args[0];
         arg.required = false;
@@ -314,6 +369,18 @@ fn convert_flag(flag: &SpecFlag) -> Flag {
             }))
             .collect(),
         arg: flag.arg.as_ref().map(convert_arg),
+        link_to: None,
+    }
+}
+
+fn mark_double_dash_jump(args: &mut [Arg]) {
+    if let Some(required) = args
+        .iter()
+        .position(|arg| arg.double_dash == DoubleDash::Required)
+    {
+        for arg in &mut args[..required] {
+            arg.skip_after_double_dash = true;
+        }
     }
 }
 
@@ -348,6 +415,8 @@ fn convert_arg(arg: &SpecArg) -> Arg {
             .then(|| arg.var_max.map_or(-1, |value| value as i128)),
         default: arg.default.first().cloned(),
         sigil: arg.sigil.clone(),
+        skip_after_double_dash: false,
+        link_after: None,
         double_dash: match arg.double_dash {
             usage::SpecDoubleDashChoices::Automatic => DoubleDash::Automatic,
             usage::SpecDoubleDashChoices::Optional => DoubleDash::Optional,
@@ -495,6 +564,7 @@ mod tests {
             [PendingMount {
                 run: "this-command-does-not-exist".into(),
                 synopsis: Some("[TASK] [ARGS]…".into()),
+                overrides_default: false,
             }]
         );
         assert_eq!(
@@ -502,10 +572,42 @@ mod tests {
             [PendingMount {
                 run: "neither does this one".into(),
                 synopsis: Some("[NAME]".into()),
+                overrides_default: false,
             }]
         );
         // Nothing is grafted: the mounted commands stay unknown until completion.
         assert!(spec.cmds.iter().all(|cmd| cmd.cmds.is_empty()));
+    }
+
+    #[test]
+    fn root_mount_respects_default_subcommand_precedence() {
+        let ordinary = r#"
+            name "demo"
+            bin "demo"
+            default_subcommand "run"
+            mount run="discover"
+            cmd "run" { arg "<task>" }
+        "#
+        .parse::<Spec>()
+        .unwrap();
+        let mut pending = PendingMounts::default();
+        collect_pending_mounts(&ordinary.cmd, &NameSpace::root(), &mut pending);
+        assert!(convert_spec(ordinary, &pending).pending_mounts.is_empty());
+
+        let overriding = r#"
+            name "demo"
+            bin "demo"
+            default_subcommand "run"
+            mount run="discover" overrides_default=#true
+            cmd "run" { arg "<task>" }
+        "#
+        .parse::<Spec>()
+        .unwrap();
+        let mut pending = PendingMounts::default();
+        collect_pending_mounts(&overriding.cmd, &NameSpace::root(), &mut pending);
+        let converted = convert_spec(overriding, &pending);
+        assert_eq!(converted.pending_mounts.len(), 1);
+        assert!(converted.pending_mounts[0].overrides_default);
     }
 
     #[test]
@@ -646,6 +748,23 @@ mod tests {
     }
 
     #[test]
+    fn hidden_arguments_still_preserve_parser_boundaries() {
+        let spec = parse(
+            r#"
+                name "demo"
+                bin "demo"
+                cmd "task" {
+                    arg "[ARGS]…" hide=#true var=#true
+                }
+            "#,
+        );
+
+        assert_eq!(spec.cmds[0].args.len(), 1);
+        assert!(spec.cmds[0].args[0].hide);
+        assert!(spec.cmds[0].args[0].var);
+    }
+
+    #[test]
     fn restart_token_is_recorded_on_the_command() {
         let spec = parse(
             r#"
@@ -658,6 +777,37 @@ mod tests {
         );
 
         assert_eq!(spec.cmds[0].restart_token.as_deref(), Some(":::"));
+    }
+
+    #[test]
+    fn marks_static_parser_transitions() {
+        let spec = r#"
+            name "demo"
+            bin "demo"
+            default_subcommand "run"
+            default_subcommand_flags #true
+            cmd "run" { flag "--jobs <COUNT>" }
+            cmd "last" {
+                arg "[BEFORE]"
+                arg "[-- AFTER]…"
+            }
+        "#
+        .parse::<Spec>()
+        .unwrap();
+        let converted = convert_spec(spec, &PendingMounts::default());
+        let default_flag = converted
+            .flags
+            .iter()
+            .find(|flag| flag.name == "jobs")
+            .expect("default command flag");
+        assert_eq!(default_flag.link_to.as_deref(), Some("run"));
+        let last = converted
+            .cmds
+            .iter()
+            .find(|cmd| cmd.name == "last")
+            .expect("last command");
+        assert!(last.args[0].skip_after_double_dash);
+        assert_eq!(last.args[1].double_dash, DoubleDash::Required);
     }
 
     #[test]
