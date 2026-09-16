@@ -20,6 +20,8 @@ pub struct UsageSpec {
     pub pending_mounts: Vec<PendingMount>,
     /// Root-level sigil arguments.
     pub sigils: Vec<Arg>,
+    pub restart_token: Option<String>,
+    pub clause: Option<Clause>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -59,6 +61,9 @@ pub struct Flag {
     pub global: GlobalFlag,
     pub aliases: Vec<Alias>,
     pub arg: Option<Arg>,
+    /// A parser entered after this flag and its value are consumed. Used by
+    /// `default_subcommand_flags` to continue in the default command context.
+    pub link_to: Option<String>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -73,6 +78,11 @@ pub struct Arg {
     pub max: Option<i128>,
     pub default: Option<String>,
     pub double_dash: DoubleDash,
+    /// Skip this positional after Clink has consumed `--`, allowing a later
+    /// `double_dash=required` argument to receive the current word.
+    pub skip_after_double_dash: bool,
+    /// Continue parsing with this generated matcher after consuming the argument.
+    pub link_after: Option<String>,
     /// A leading prefix that classifies this argument independently of its place in
     /// the positional sequence, e.g. `+` for `+node`. The prefix is removed before the
     /// value is stored or completed.
@@ -89,6 +99,16 @@ pub enum DoubleDash {
 }
 
 #[derive(Debug, Default, Clone)]
+pub struct Clause {
+    pub name: String,
+    pub separator: Option<String>,
+    pub help: String,
+    pub flags: Vec<Flag>,
+    pub args: Vec<Arg>,
+    pub sigils: Vec<Arg>,
+}
+
+#[derive(Debug, Default, Clone)]
 pub struct Cmd {
     pub name: String,
     pub help: String,
@@ -102,22 +122,27 @@ pub struct Cmd {
     /// Mounts declared by this command. Their commands are discovered by running the
     /// mount while completing, never while generating.
     pub pending_mounts: Vec<PendingMount>,
+    /// Global flags accepted before this command and replayed into its mount command.
+    pub mount_prefix_flags: Vec<Flag>,
     /// Sigil arguments in effect here: this command's own plus every ancestor's, because
     /// a subcommand inherits the sigils declared by its ancestors.
     pub sigils: Vec<Arg>,
     /// Token that restarts argument parsing, letting one command line hold several
     /// invocations of this command.
     pub restart_token: Option<String>,
+    pub clause: Option<Clause>,
 }
 
-/// A Usage `mount`: the mounted commands are discovered by running `run` while
-/// completing, as usage itself does when it resolves a mount.
+/// A Usage `mount`: its output is converted to a Clink matcher when this command path is
+/// first completed. The generated matcher is cached for the current working directory.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct PendingMount {
-    /// Command executed while completing to print the mounted command names.
+    /// Command executed while completing to print a Usage spec.
     pub run: String,
     /// Placeholder shown for the discovered commands, e.g. `[TASK] [ARGS]…`.
     pub synopsis: Option<String>,
+    /// Allow discovered root commands to outrank a declared default subcommand.
+    pub overrides_default: bool,
 }
 
 #[derive(Debug, Default, Clone)]

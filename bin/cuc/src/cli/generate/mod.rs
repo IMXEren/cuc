@@ -39,6 +39,22 @@ pub struct Generate {
 
     #[arg(
         long,
+        value_name = "NAMESPACE",
+        help = "Emit a matcher initializer for a mounted Usage spec read from stdin."
+    )]
+    pub mount: Option<String>,
+
+    #[arg(
+        long,
+        hide = true,
+        requires = "mount",
+        allow_hyphen_values = true,
+        value_name = "TOKEN"
+    )]
+    pub mount_step_over: Vec<String>,
+
+    #[arg(
+        long,
         help = "The shell that'll be used to run the completion command."
     )]
     pub shell: Option<PathBuf>,
@@ -65,6 +81,8 @@ impl Generate {
             cached_functions: &mut genrtr.cached_functions,
             completor: genrtr.completor.as_ref(),
             arg_matchers: &genrtr.arg_matchers,
+            mount_prefix: self.mount.as_deref(),
+            mount_step_over: &self.mount_step_over,
         };
         let usage_completions = genv.generate();
         if let Some(out) = self.out {
@@ -82,7 +100,7 @@ impl Generate {
 
     fn find_shell(&self) -> anyhow::Result<PathBuf> {
         if let Some(ref path) = self.shell {
-            return Ok(which::which(path)?.canonicalize()?);
+            return Ok(which::which(path)?);
         }
 
         let failure_message = "failed to find bash shell! Try again with inputting the shell flag";
@@ -179,6 +197,8 @@ mod tests {
             arg_matchers: Vec::new(),
             out: Some(output_path.clone()),
             complete: false,
+            mount: None,
+            mount_step_over: Vec::new(),
             shell: None,
         }
         .run()
