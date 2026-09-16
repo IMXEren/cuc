@@ -1,3 +1,9 @@
+## [0.4.0-dev.1](https://github.com/IMXEren/cuc/compare/v0.3.0...v0.4.0-dev.1) (2026-09-16)
+
+### ✨ New Features
+
+* generate advanced Usage completions as static Lua ([f7c4ef4](https://github.com/IMXEren/cuc/commit/f7c4ef4588e23a32180b71f24395afb61f7bc651))
+
 ## [0.3.0](https://github.com/IMXEren/cuc/compare/v0.2.7...v0.3.0) (2026-09-13)
 
 ### 🐛 Bug Fixes
