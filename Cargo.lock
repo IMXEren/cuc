@@ -128,10 +128,10 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 [[package]]
 name = "clap_usage"
 version = "5.0.0"
-source = "git+https://github.com/jdx/usage?tag=v6.9.0#9e65ac0362edc2d4265667367316d3ab630f5ebb"
+source = "git+https://github.com/jdx/usage?tag=v6.11.1#13c051e5f9583804ada6df05bd57471704db8358"
 dependencies = [
  "clap",
- "usage-lib",
+ "usage-lib 6.11.1",
 ]
 
 [[package]]
@@ -155,7 +155,7 @@ dependencies = [
  "scoop-shim",
  "shell-words",
  "tera",
- "usage-lib",
+ "usage-lib 6.9.0",
  "which",
  "winsplit",
 ]
@@ -473,9 +473,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254"
 
 [[package]]
+name = "usage-argv"
+version = "6.11.1"
+source = "git+https://github.com/jdx/usage?tag=v6.11.1#13c051e5f9583804ada6df05bd57471704db8358"
+
+[[package]]
 name = "usage-lib"
 version = "6.9.0"
 source = "git+https://github.com/jdx/usage?tag=v6.9.0#9e65ac0362edc2d4265667367316d3ab630f5ebb"
+dependencies = [
+ "indexmap",
+ "itertools",
+ "log",
+ "num-traits",
+ "regex",
+ "semver",
+ "serde",
+ "thiserror 2.0.12",
+ "unicode-width 0.2.2",
+ "winnow 1.0.4",
+]
+
+[[package]]
+name = "usage-lib"
+version = "6.11.1"
+source = "git+https://github.com/jdx/usage?tag=v6.11.1#13c051e5f9583804ada6df05bd57471704db8358"
 dependencies = [
  "clap",
  "indexmap",
@@ -487,6 +509,7 @@ dependencies = [
  "serde",
  "thiserror 2.0.12",
  "unicode-width 0.2.2",
+ "usage-argv",
  "winnow 1.0.4",
 ]
 
