@@ -128,7 +128,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 [[package]]
 name = "clap_usage"
 version = "5.0.0"
-source = "git+https://github.com/jdx/usage?tag=v6.9.0#9e65ac0362edc2d4265667367316d3ab630f5ebb"
+source = "git+https://github.com/jdx/usage?tag=v6.12.0#197b82b617e748b5c3c9a7f961af72edf1dd5db0"
 dependencies = [
  "clap",
  "usage-lib",
@@ -473,9 +473,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254"
 
 [[package]]
+name = "usage-argv"
+version = "6.12.0"
+source = "git+https://github.com/jdx/usage?tag=v6.12.0#197b82b617e748b5c3c9a7f961af72edf1dd5db0"
+
+[[package]]
 name = "usage-lib"
-version = "6.9.0"
-source = "git+https://github.com/jdx/usage?tag=v6.9.0#9e65ac0362edc2d4265667367316d3ab630f5ebb"
+version = "6.12.0"
+source = "git+https://github.com/jdx/usage?tag=v6.12.0#197b82b617e748b5c3c9a7f961af72edf1dd5db0"
 dependencies = [
  "clap",
  "indexmap",
@@ -487,6 +492,7 @@ dependencies = [
  "serde",
  "thiserror 2.0.12",
  "unicode-width 0.2.2",
+ "usage-argv",
  "winnow 1.0.4",
 ]
 
