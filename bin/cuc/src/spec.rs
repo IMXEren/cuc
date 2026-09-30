@@ -10,6 +10,7 @@ use cuc::{
         Alias, Arg, Cmd, Complete, CompleteKind, DoubleDash, Flag, GlobalFlag, Info, PendingMount,
     },
 };
+use usage::error::UsageErr;
 use usage::{Spec, SpecArg, SpecClause, SpecCommand, SpecComplete, SpecFlag};
 
 pub trait UsageSpecExt
@@ -23,7 +24,7 @@ where
 impl UsageSpecExt for cuc::usage::UsageSpec {
     fn load(file: Option<&PathBuf>) -> anyhow::Result<Self> {
         let spec = if let Some(path) = file {
-            Spec::parse_file(path)?
+            parse_spec("", Some(path))?
         } else {
             let mut input = std::io::stdin();
             if input.is_terminal() {
@@ -31,7 +32,7 @@ impl UsageSpecExt for cuc::usage::UsageSpec {
             }
             let mut source = String::new();
             input.read_to_string(&mut source)?;
-            source.parse::<Spec>()?
+            parse_spec(&source, None)?
         };
 
         let mut pending = PendingMounts::default();
@@ -42,6 +43,37 @@ impl UsageSpecExt for cuc::usage::UsageSpec {
     fn add_default_completes(completes: &mut HashMap<String, Complete>) {
         completes.insert("file".into(), Complete::file_complete());
         completes.insert("dir".into(), Complete::dir_complete());
+    }
+}
+
+fn parse_spec(source: &str, file: Option<&PathBuf>) -> anyhow::Result<Spec> {
+    match file {
+        Some(path) => Spec::parse_file(path),
+        None => source.parse::<Spec>(),
+    }
+    .map_err(spec_parse_error)
+}
+
+// InvalidInput's Display omits the detail and source location stored in its fields.
+fn spec_parse_error(err: UsageErr) -> anyhow::Error {
+    match err {
+        UsageErr::InvalidInput(detail, span, source) => {
+            let text = source.inner();
+            let offset = span.offset().min(text.len());
+            let line = text
+                .bytes()
+                .take(offset)
+                .filter(|byte| *byte == b'\n')
+                .count()
+                + 1;
+            let name = if source.name().is_empty() {
+                "stdin"
+            } else {
+                source.name()
+            };
+            anyhow::anyhow!("Invalid usage config at {name}:{line}: {detail}")
+        }
+        other => other.into(),
     }
 }
 
@@ -831,5 +863,92 @@ mod tests {
         assert!(spec.pending_mounts.is_empty());
         assert!(spec.cmds[0].pending_mounts.is_empty());
         assert_eq!(spec.cmds[0].cmds[0].pending_mounts[0].run, "discover");
+    }
+
+    fn load(source: &str) -> anyhow::Result<cuc::usage::UsageSpec> {
+        parse_spec(source, None).map(|spec| convert_spec(spec, &PendingMounts::default()))
+    }
+
+    #[test]
+    fn accepts_a_logo_with_a_style() {
+        let spec = load(
+            r#"
+                name "demo"
+                bin "demo"
+                logo "art" style="green"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(spec.info.bin, "demo");
+    }
+
+    #[test]
+    fn accepts_a_newer_or_invalid_minimum_version_when_syntax_is_supported() {
+        for version in ["99.0", "not-a-version"] {
+            let spec = load(&format!(
+                "name \"demo\"\nbin \"demo\"\nmin_usage_version \"{version}\"\n"
+            ))
+            .unwrap();
+            assert_eq!(spec.info.name, "demo");
+        }
+    }
+
+    #[test]
+    fn accepts_an_abbreviated_or_older_minimum_version() {
+        for version in [
+            "6",
+            "6.1",
+            "6.9",
+            "6.12",
+            "6.12.0",
+            "6.12.0+build",
+            "6.12.0-rc.1",
+        ] {
+            let spec = load(&format!(
+                "name \"demo\"\nbin \"demo\"\nmin_usage_version \"{version}\"\n"
+            ))
+            .unwrap_or_else(|err| panic!("min_usage_version {version} was refused: {err:#}"));
+            assert_eq!(spec.info.name, "demo");
+        }
+    }
+
+    #[test]
+    fn reports_the_detail_and_position_of_a_rejected_spec() {
+        let err = load("name \"demo\"\nbin \"demo\"\nlogo \"art\" nonsense=#true\n").unwrap_err();
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("unsupported logo key nonsense"),
+            "{message}"
+        );
+        assert!(message.contains("stdin:3"), "{message}");
+    }
+
+    #[test]
+    fn reports_a_file_spec_with_its_path() {
+        let path = std::env::temp_dir().join(format!("cuc-usage-{}.kdl", std::process::id()));
+        let source = "name \"demo\"\nbin \"demo\"\nlogo \"art\" nonsense=#true\n";
+        std::fs::write(&path, source).unwrap();
+
+        let err = parse_spec(source, Some(&path)).unwrap_err();
+        std::fs::remove_file(&path).ok();
+
+        let message = format!("{err:#}");
+        assert!(
+            message.contains(path.file_name().unwrap().to_str().unwrap()),
+            "{message}"
+        );
+        assert!(message.contains(":3:"), "{message}");
+    }
+
+    #[test]
+    fn accepts_a_newer_minimum_version_in_a_file_too() {
+        let path = std::env::temp_dir().join(format!("cuc-usage-file-{}.kdl", std::process::id()));
+        let source = "name \"demo\"\nbin \"demo\"\nmin_usage_version \"99.0\"\n";
+        std::fs::write(&path, source).unwrap();
+
+        let spec = parse_spec(source, Some(&path)).unwrap();
+        std::fs::remove_file(&path).ok();
+
+        assert_eq!(spec.min_usage_version.as_deref(), Some("99.0"));
     }
 }
