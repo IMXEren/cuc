@@ -1,3 +1,12 @@
+## [0.4.1-dev.1](https://github.com/IMXEren/cuc/compare/v0.4.0...v0.4.1-dev.1) (2026-09-30)
+
+### 🐛 Bug Fixes
+
+* emit generated Lua functions in deterministic order ([81fe32a](https://github.com/IMXEren/cuc/commit/81fe32ad3497c44d2f87e70072999ab1a4d1820d))
+* report Usage parse error details and source locations ([3811b57](https://github.com/IMXEren/cuc/commit/3811b57c6ffb9352588fcd0679671018202dd0d2))
+* serialize release workflow runs ([2dda198](https://github.com/IMXEren/cuc/commit/2dda198f28bb2a419d016405e77a805cf7dae991))
+* upgrade Usage dependencies to v6.12.0 ([aeeec6a](https://github.com/IMXEren/cuc/commit/aeeec6a743b16fac8a61f4c667888153e545ca8b))
+
 ## [0.4.0](https://github.com/IMXEren/cuc/compare/v0.3.0...v0.4.0) (2026-09-16)
 
 ### ✨ New Features

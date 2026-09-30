@@ -87,9 +87,9 @@ checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
 
 [[package]]
 name = "clap"
-version = "4.6.6"
+version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "473c7e07f409a8d772161724aa8db6a765a2532a70f9667eeb7b49d3d02fbdca"
+checksum = "aa8876b300ab35ba921adea3dfd70157a46249b33f95c9084ae5709785478946"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -97,9 +97,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.6.6"
+version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b48fea5a88e9ae728a2dcbedbfc0e730f7d60da42e1cb049a83c9fb8b789889"
+checksum = "ec0797fb7aeb1406c84efac526901f7ec3ead2124f946b494e72879d4b54704d"
 dependencies = [
  "anstream",
  "anstyle",
@@ -109,9 +109,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.6.4"
+version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d012d2b9d65aca7f18f4d9878a045bc17899bba951561ba5ec3c2ba1eed9a061"
+checksum = "f9c751b79415d4e559e3d1fcf128e09e720eb673a06d26cf6f392d37d75b66e0"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -128,7 +128,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 [[package]]
 name = "clap_usage"
 version = "5.0.0"
-source = "git+https://github.com/jdx/usage?tag=v6.9.0#9e65ac0362edc2d4265667367316d3ab630f5ebb"
+source = "git+https://github.com/jdx/usage?tag=v6.12.0#197b82b617e748b5c3c9a7f961af72edf1dd5db0"
 dependencies = [
  "clap",
  "usage-lib",
@@ -142,7 +142,7 @@ checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 
 [[package]]
 name = "cuc-cli"
-version = "0.4.0"
+version = "0.4.1-dev.1"
 dependencies = [
  "anyhow",
  "base64",
@@ -473,9 +473,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254"
 
 [[package]]
+name = "usage-argv"
+version = "6.12.0"
+source = "git+https://github.com/jdx/usage?tag=v6.12.0#197b82b617e748b5c3c9a7f961af72edf1dd5db0"
+
+[[package]]
 name = "usage-lib"
-version = "6.9.0"
-source = "git+https://github.com/jdx/usage?tag=v6.9.0#9e65ac0362edc2d4265667367316d3ab630f5ebb"
+version = "6.12.0"
+source = "git+https://github.com/jdx/usage?tag=v6.12.0#197b82b617e748b5c3c9a7f961af72edf1dd5db0"
 dependencies = [
  "clap",
  "indexmap",
@@ -487,6 +492,7 @@ dependencies = [
  "serde",
  "thiserror 2.0.12",
  "unicode-width 0.2.2",
+ "usage-argv",
  "winnow 1.0.4",
 ]
 

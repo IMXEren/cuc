@@ -470,12 +470,18 @@ end
             script_body += &arg_match_register_completion;
         }
 
-        for func in self.cached_functions.values() {
-            script_start += func;
-        }
+        Self::append_cached_functions(self.cached_functions, &mut script_start);
 
         script_start += &script_body;
         script_start
+    }
+
+    fn append_cached_functions(cached_functions: &HashMap<String, String>, out: &mut String) {
+        let mut functions: Vec<_> = cached_functions.iter().collect();
+        functions.sort_by_key(|(name, _)| *name);
+        for (_, function) in functions {
+            out.push_str(function);
+        }
     }
 
     fn function_ref(name: impl AsRef<str>) -> String {
@@ -1997,6 +2003,104 @@ mod tests {
             mount_step_over: &[],
         }
         .generate()
+    }
+
+    #[test]
+    fn cached_functions_emit_in_name_order_regardless_of_insertion() {
+        let mut forward = HashMap::new();
+        forward.insert("_cuc.b".to_string(), "function _cuc.b() end\n".to_string());
+        forward.insert("_cuc.a".to_string(), "function _cuc.a() end\n".to_string());
+        forward.insert("_cuc.c".to_string(), "function _cuc.c() end\n".to_string());
+
+        let mut backward = HashMap::new();
+        backward.insert("_cuc.c".to_string(), "function _cuc.c() end\n".to_string());
+        backward.insert("_cuc.a".to_string(), "function _cuc.a() end\n".to_string());
+        backward.insert("_cuc.b".to_string(), "function _cuc.b() end\n".to_string());
+
+        let mut forward_out = String::new();
+        GeneratorView::append_cached_functions(&forward, &mut forward_out);
+        let mut backward_out = String::new();
+        GeneratorView::append_cached_functions(&backward, &mut backward_out);
+
+        assert_eq!(forward_out, backward_out);
+        assert_eq!(
+            forward_out,
+            "function _cuc.a() end\nfunction _cuc.b() end\nfunction _cuc.c() end\n"
+        );
+    }
+
+    #[test]
+    fn identical_specs_generate_identical_lua() {
+        let spec = UsageSpec {
+            info: Info {
+                name: "demo".into(),
+                bin: "demo".into(),
+            },
+            flags: vec![
+                Flag {
+                    name: "verbose".into(),
+                    names: vec!["--verbose".into()],
+                    ..Default::default()
+                },
+                Flag {
+                    name: "output".into(),
+                    names: vec!["--output".into()],
+                    arg: Some(Arg {
+                        name: "output".into(),
+                        repr: "<output>".into(),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            ],
+            cmds: vec![
+                Cmd {
+                    name: "add".into(),
+                    args: vec![Arg {
+                        name: "task".into(),
+                        repr: "<task>".into(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                Cmd {
+                    name: "remove".into(),
+                    args: vec![Arg {
+                        name: "name".into(),
+                        repr: "<name>".into(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                Cmd {
+                    name: "list".into(),
+                    args: vec![Arg {
+                        name: "filter".into(),
+                        repr: "<filter>".into(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+
+        let first = generate(spec.clone());
+        let second = generate(spec);
+
+        assert_eq!(first, second);
+
+        // The emitted `_cuc` fields are in name order, not hash order.
+        let names = first
+            .lines()
+            .filter_map(|line| line.strip_prefix("function "))
+            .filter_map(|line| line.split('(').next())
+            .filter(|name| name.starts_with("_cuc."))
+            .collect::<Vec<_>>();
+        assert!(names.len() > 1);
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        assert_eq!(names, sorted);
     }
 
     #[test]
