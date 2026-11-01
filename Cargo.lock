@@ -128,7 +128,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 [[package]]
 name = "clap_usage"
 version = "5.0.0"
-source = "git+https://github.com/jdx/usage?tag=v6.12.0#197b82b617e748b5c3c9a7f961af72edf1dd5db0"
+source = "git+https://github.com/jdx/usage?tag=v7.1.5#b15054a4a6de39c673f6e75f5b300a823c5b0dc4"
 dependencies = [
  "clap",
  "usage-lib",
@@ -474,13 +474,13 @@ checksum = "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254"
 
 [[package]]
 name = "usage-argv"
-version = "6.12.0"
-source = "git+https://github.com/jdx/usage?tag=v6.12.0#197b82b617e748b5c3c9a7f961af72edf1dd5db0"
+version = "7.1.5"
+source = "git+https://github.com/jdx/usage?tag=v7.1.5#b15054a4a6de39c673f6e75f5b300a823c5b0dc4"
 
 [[package]]
 name = "usage-lib"
-version = "6.12.0"
-source = "git+https://github.com/jdx/usage?tag=v6.12.0#197b82b617e748b5c3c9a7f961af72edf1dd5db0"
+version = "7.1.5"
+source = "git+https://github.com/jdx/usage?tag=v7.1.5#b15054a4a6de39c673f6e75f5b300a823c5b0dc4"
 dependencies = [
  "clap",
  "indexmap",
