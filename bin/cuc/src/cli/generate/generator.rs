@@ -1143,14 +1143,14 @@ end
         completes: &HashMap<String, cuc::usage::Complete>,
         enclose: bool,
         links: &ParserLinks,
+        allow_root_complete: bool,
     ) -> String {
         let matcher = if arg.hide {
             Some("function() return {} end".to_string())
         } else if arg.sigil.is_some() && arg.choices.is_empty() {
             // A dynamic sigil needs a wrapper that restores the prefix. Even when
             // --complete is absent, its empty position remains so onadvance can skip it.
-            self.find_arg_complete(arg, completes)
-                .cloned()
+            self.find_arg_complete(arg, completes, allow_root_complete)
                 .filter(|complete| match complete.kind {
                     cuc::usage::CompleteKind::None => false,
                     cuc::usage::CompleteKind::Run(_) => self.completor.is_some(),
@@ -1168,8 +1168,7 @@ end
             Some(format!("\"{}\"", arg.choices.join(r#"", ""#)))
         } else {
             // Just add input hints for helping when no matcher is available.
-            self.find_arg_complete(arg, completes)
-                .cloned()
+            self.find_arg_complete(arg, completes, allow_root_complete)
                 .and_then(|complete| match complete.kind {
                     cuc::usage::CompleteKind::File => Some("clink.filematches".to_string()),
                     cuc::usage::CompleteKind::Dir => Some("clink.dirmatches".to_string()),
@@ -1209,6 +1208,7 @@ end
         let mut arg: Option<&cuc::usage::Arg> = None;
         let mut started = false;
         let mut has_entry = false;
+        let allow_root_complete = self.mount_prefix.is_none() || fmt.ns.is_root();
 
         let entry_start = |completions: &mut String, fmt: &mut GenFormatter| {
             fmt.increment_level();
@@ -1235,7 +1235,7 @@ end
         if !args.is_empty() {
             arg = Some(args[0].borrow());
             let arg = arg.unwrap();
-            let arg_completion = self.add_arg(arg, completes, false, links);
+            let arg_completion = self.add_arg(arg, completes, false, links, allow_root_complete);
             entry_start(&mut completions, fmt);
             started = true;
             if !arg_completion.is_empty() {
@@ -1331,7 +1331,7 @@ end
                 let arg = arg.borrow();
                 fmt.newline(&mut completions);
                 fmt.indent(&mut completions);
-                completions += &self.add_arg(arg, completes, true, links);
+                completions += &self.add_arg(arg, completes, true, links, allow_root_complete);
             }
         }
 
@@ -1417,7 +1417,8 @@ end
                         ns.cmd_func_name(namespace::slugify(command)),
                     ));
                 }
-                let arg_completion = self.add_arg(&arg, completes, true, &ParserLinks::default());
+                let arg_completion =
+                    self.add_arg(&arg, completes, true, &ParserLinks::default(), true);
                 if !arg_completion.is_empty() {
                     function += "function ";
                     function += &func_name;
@@ -1972,15 +1973,26 @@ end
         self.cached_functions.insert(func_name, function);
     }
 
-    fn find_arg_complete<'a>(
-        &'a self,
+    fn find_arg_complete(
+        &self,
         arg: &cuc::usage::Arg,
-        completes: &'a HashMap<String, cuc::usage::Complete>,
-    ) -> Option<&'a cuc::usage::Complete> {
-        let arg_name_lower = arg.name.to_lowercase();
-        completes
-            .get(&arg_name_lower)
-            .or_else(|| self.spec.completes.get(&arg_name_lower))
+        completes: &HashMap<String, cuc::usage::Complete>,
+        allow_root_complete: bool,
+    ) -> Option<cuc::usage::Complete> {
+        let name = arg.name.to_lowercase();
+        let declared = if allow_root_complete {
+            self.spec
+                .completes
+                .get(&name)
+                .or_else(|| completes.get(&name))
+        } else {
+            completes.get(&name)
+        };
+        declared.cloned().or_else(|| match name.as_str() {
+            "file" => Some(cuc::usage::Complete::file_complete()),
+            "dir" => Some(cuc::usage::Complete::dir_complete()),
+            _ => None,
+        })
     }
 }
 
@@ -2324,6 +2336,92 @@ mod tests {
         };
 
         assert!(generate(spec).contains("clink.dirmatches"));
+    }
+
+    #[test]
+    fn root_completer_precedes_command_completer_for_ordinary_commands() {
+        let mut command = Cmd {
+            name: "open".into(),
+            args: vec![Arg {
+                name: "target".into(),
+                repr: "<target>".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        command.completes.insert(
+            "target".into(),
+            Complete {
+                name: "open::target".into(),
+                kind: CompleteKind::Dir,
+                descs: false,
+            },
+        );
+        let mut spec = UsageSpec {
+            info: Info {
+                name: "demo".into(),
+                bin: "demo".into(),
+            },
+            cmds: vec![command],
+            ..Default::default()
+        };
+        spec.completes.insert(
+            "target".into(),
+            Complete {
+                name: "target".into(),
+                kind: CompleteKind::File,
+                descs: false,
+            },
+        );
+        let lua = generate(spec);
+        assert!(lua.contains("clink.filematches"));
+        assert!(!lua.contains("clink.dirmatches"));
+    }
+
+    #[test]
+    fn declared_file_completer_precedes_the_builtin() {
+        let mut command = Cmd {
+            name: "open".into(),
+            args: vec![Arg {
+                name: "file".into(),
+                repr: "<file>".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        command.completes.insert(
+            "file".into(),
+            Complete {
+                name: "open::file".into(),
+                kind: CompleteKind::Dir,
+                descs: false,
+            },
+        );
+        let spec = UsageSpec {
+            info: Info {
+                name: "demo".into(),
+                bin: "demo".into(),
+            },
+            cmds: vec![command],
+            ..Default::default()
+        };
+        let lua = generate(spec);
+        assert!(lua.contains("clink.dirmatches"));
+        assert!(!lua.contains("clink.filematches"));
+
+        let builtin = UsageSpec {
+            info: Info {
+                name: "demo".into(),
+                bin: "demo".into(),
+            },
+            args: vec![Arg {
+                name: "file".into(),
+                repr: "<file>".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert!(generate(builtin).contains("clink.filematches"));
     }
 
     #[test]
@@ -2702,6 +2800,72 @@ mod tests {
         assert!(lua.contains("function _cuc._cmd_parent_nested()"));
         assert!(lua.contains("{ \"nested\" .. _cuc._cmd_parent_nested()"));
         assert!(!lua.contains("clink.argmatcher(\"plugin\")"));
+    }
+
+    #[test]
+    fn mounted_arguments_do_not_inherit_root_completers() {
+        let arg = Arg {
+            name: "target".into(),
+            repr: "<target>".into(),
+            ..Default::default()
+        };
+        let mut spec = UsageSpec {
+            info: Info {
+                name: "demo".into(),
+                bin: "demo".into(),
+            },
+            cmds: vec![Cmd {
+                name: "mounted".into(),
+                args: vec![arg.clone()],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        spec.completes.insert(
+            "target".into(),
+            Complete {
+                name: "target".into(),
+                kind: CompleteKind::File,
+                descs: false,
+            },
+        );
+        let mut functions = HashMap::new();
+        let mut generate = |spec: &UsageSpec| {
+            GeneratorView {
+                spec,
+                cached_functions: &mut functions,
+                completor: None,
+                arg_matchers: &Vec::new(),
+                mount_prefix: Some("root"),
+                mount_step_over: &[],
+            }
+            .generate()
+        };
+        let lua = generate(&spec);
+        assert!(lua.contains("function _cuc._cmd_root_mounted()"));
+        assert!(!lua.contains("clink.filematches"));
+
+        spec.cmds[0].completes.insert(
+            "target".into(),
+            Complete {
+                name: "mounted::target".into(),
+                kind: CompleteKind::Dir,
+                descs: false,
+            },
+        );
+        let lua = generate(&spec);
+        assert!(lua.contains("clink.dirmatches"));
+        assert!(!lua.contains("clink.filematches"));
+
+        spec.cmds[0].flags.push(Flag {
+            name: "pick".into(),
+            names: vec!["--pick".into()],
+            arg: Some(arg),
+            ..Default::default()
+        });
+        let lua = generate(&spec);
+        assert!(lua.contains("clink.dirmatches"));
+        assert!(lua.contains("clink.filematches"));
     }
 
     #[test]

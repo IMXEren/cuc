@@ -38,7 +38,7 @@ jobs:
 
       # Only master and dev publish — filtered by the branches config in .releaserc
       - name: Release
-        uses: cycjimmy/semantic-release-action@v6
+        uses: cycjimmy/semantic-release-action@v8
         id: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
