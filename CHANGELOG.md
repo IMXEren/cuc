@@ -1,3 +1,14 @@
+## [0.4.2-dev.1](https://github.com/IMXEren/cuc/compare/v0.4.1...v0.4.2-dev.1) (2026-11-01)
+
+### 🐛 Bug Fixes
+
+* match Usage completer precedence across mounts ([f30f54a](https://github.com/IMXEren/cuc/commit/f30f54a41a4699c8b986705786133edf4282879d))
+* support Usage shell filters in completers ([fc2780a](https://github.com/IMXEren/cuc/commit/fc2780a3989de3a8abe7933044d38c2eda8e790e))
+
+### 🚀 Updated App Support
+
+* upgrade Usage crates to v7.1.5 ([3777279](https://github.com/IMXEren/cuc/commit/3777279ca020160ae989b392201fa0fe91495d94))
+
 ## [0.4.1](https://github.com/IMXEren/cuc/compare/v0.4.0...v0.4.1) (2026-09-30)
 
 ### 🐛 Bug Fixes
