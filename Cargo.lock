@@ -128,10 +128,10 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 [[package]]
 name = "clap_usage"
 version = "5.0.0"
-source = "git+https://github.com/jdx/usage?tag=v7.1.5#b15054a4a6de39c673f6e75f5b300a823c5b0dc4"
+source = "git+https://github.com/jdx/usage?tag=v7.1.3#f357a6c096be219a3166346dbb199ab36d5be73a"
 dependencies = [
  "clap",
- "usage-lib",
+ "usage-lib 7.1.3",
 ]
 
 [[package]]
@@ -155,7 +155,7 @@ dependencies = [
  "scoop-shim",
  "shell-words",
  "tera",
- "usage-lib",
+ "usage-lib 7.1.5",
  "which",
  "winsplit",
 ]
@@ -474,13 +474,18 @@ checksum = "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254"
 
 [[package]]
 name = "usage-argv"
+version = "7.1.3"
+source = "git+https://github.com/jdx/usage?tag=v7.1.3#f357a6c096be219a3166346dbb199ab36d5be73a"
+
+[[package]]
+name = "usage-argv"
 version = "7.1.5"
 source = "git+https://github.com/jdx/usage?tag=v7.1.5#b15054a4a6de39c673f6e75f5b300a823c5b0dc4"
 
 [[package]]
 name = "usage-lib"
-version = "7.1.5"
-source = "git+https://github.com/jdx/usage?tag=v7.1.5#b15054a4a6de39c673f6e75f5b300a823c5b0dc4"
+version = "7.1.3"
+source = "git+https://github.com/jdx/usage?tag=v7.1.3#f357a6c096be219a3166346dbb199ab36d5be73a"
 dependencies = [
  "clap",
  "indexmap",
@@ -492,7 +497,25 @@ dependencies = [
  "serde",
  "thiserror 2.0.12",
  "unicode-width 0.2.2",
- "usage-argv",
+ "usage-argv 7.1.3",
+ "winnow 1.0.4",
+]
+
+[[package]]
+name = "usage-lib"
+version = "7.1.5"
+source = "git+https://github.com/jdx/usage?tag=v7.1.5#b15054a4a6de39c673f6e75f5b300a823c5b0dc4"
+dependencies = [
+ "indexmap",
+ "itertools",
+ "log",
+ "num-traits",
+ "regex",
+ "semver",
+ "serde",
+ "thiserror 2.0.12",
+ "unicode-width 0.2.2",
+ "usage-argv 7.1.5",
  "winnow 1.0.4",
 ]
 

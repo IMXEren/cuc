@@ -19,7 +19,7 @@ anyhow = "1.0.104"
 base64 = "0.23.1"
 clap = { version = "4.6.6", features = ["derive"] }
 cuc-lib = { workspace = true }
-clap_usage = { git = "https://github.com/jdx/usage", tag = "v7.1.5" }
+clap_usage = { git = "https://github.com/jdx/usage", tag = "v7.1.3" }
 usage = { package = "usage-lib", git = "https://github.com/jdx/usage", tag = "v7.1.5", default-features = false }
 kdl = "6"
 indexmap = "2.13.0"
