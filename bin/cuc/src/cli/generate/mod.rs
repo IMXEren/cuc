@@ -67,7 +67,7 @@ impl Generate {
             spec: usage_spec,
             ..Default::default()
         };
-        cuc::usage::UsageSpec::add_default_completes(&mut genrtr.spec.completes);
+
         if self.complete {
             genrtr.completor = Some(Completor {
                 exe_path: std::env::current_exe()?,

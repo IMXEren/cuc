@@ -18,7 +18,6 @@ where
     Self: Sized,
 {
     fn load(file: Option<&PathBuf>) -> anyhow::Result<Self>;
-    fn add_default_completes(completes: &mut HashMap<String, Complete>);
 }
 
 impl UsageSpecExt for cuc::usage::UsageSpec {
@@ -38,11 +37,6 @@ impl UsageSpecExt for cuc::usage::UsageSpec {
         let mut pending = PendingMounts::default();
         collect_pending_mounts(&spec.cmd, &NameSpace::root(), &mut pending);
         Ok(convert_spec(spec, &pending))
-    }
-
-    fn add_default_completes(completes: &mut HashMap<String, Complete>) {
-        completes.insert("file".into(), Complete::file_complete());
-        completes.insert("dir".into(), Complete::dir_complete());
     }
 }
 
